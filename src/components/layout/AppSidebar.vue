@@ -40,7 +40,7 @@ function handleLogout() {
 <template>
   <aside class="sidebar">
     <div class="sidebar-header">
-      <img src="@/assets/temphora.svg" alt="Temphora" class="sidebar-logo" />
+      <img src="@/assets/temphora.png" alt="Temphora" class="sidebar-logo" />
       <span class="sidebar-brand">Temphora</span>
     </div>
 

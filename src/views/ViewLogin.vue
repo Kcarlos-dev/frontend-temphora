@@ -25,7 +25,7 @@ async function handleLogin() {
     <div class="login-card">
       <header class="login-header">
         <div class="brand">
-          <img src="@/assets/temphora.svg" alt="Temphora" class="brand-logo" />
+          <img src="@/assets/temphora.png" alt="Temphora" class="brand-logo" />
           <span class="brand-name">Temphora</span>
         </div>
       </header>
