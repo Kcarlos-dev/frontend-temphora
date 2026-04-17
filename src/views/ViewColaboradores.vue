@@ -16,14 +16,33 @@ const saving = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
 
+/** Admin/RH: empresa vem do login. Root: escolhe o ID da empresa no formulário. */
+const empresaReadonly = computed(() => auth.empresaId != null && !auth.isRoot)
+
+const statusOptions: { value: Colaborador['status']; label: string }[] = [
+  { value: 'ativo', label: 'Ativo' },
+  { value: 'inativo', label: 'Inativo' },
+  { value: 'ferias', label: 'Férias' },
+  { value: 'desligado', label: 'Desligado' },
+]
+
 const form = ref({
   full_name: '',
   cpf: '',
   phone: '',
   position: '',
-  id_empresa: auth.empresaId ?? 0,
-  id_user: 0,
+  id_empresa: auth.empresaId != null ? String(auth.empresaId) : '',
+  id_user: '',
+  status: 'ativo' as Colaborador['status'],
 })
+
+function resolveEmpresaIdAlvo(): number {
+  if (empresaReadonly.value && auth.empresaId != null) {
+    return auth.empresaId
+  }
+  const n = parseInt(form.value.id_empresa.trim(), 10)
+  return !Number.isNaN(n) && n > 0 ? n : 0
+}
 
 const filtered = computed(() => {
   let list = colaboradores.value
@@ -57,8 +76,10 @@ function openNew() {
     cpf: '',
     phone: '',
     position: '',
-    id_empresa: auth.empresaId ?? 0,
-    id_user: 0,
+    id_empresa:
+      auth.empresaId != null ? String(auth.empresaId) : '',
+    id_user: '',
+    status: 'ativo',
   }
   showModal.value = true
 }
@@ -70,22 +91,43 @@ function openEdit(colab: Colaborador) {
     cpf: colab.cpf ?? '',
     phone: colab.phone ?? '',
     position: colab.position ?? '',
-    id_empresa: colab.id_empresa,
-    id_user: colab.id_user,
+    id_empresa: String(colab.id_empresa),
+    id_user: String(colab.id_user),
+    status: colab.status,
   }
   showModal.value = true
 }
 
 async function handleSave() {
-  if (!auth.empresaId) return
+  const idEmpresaAlvo = resolveEmpresaIdAlvo()
+  if (!idEmpresaAlvo) {
+    errorMsg.value = 'Informe o ID da empresa.'
+    return
+  }
+
+  const idUser = parseInt(String(form.value.id_user).trim(), 10)
+  if (!Number.isFinite(idUser) || idUser < 1) {
+    errorMsg.value = 'Informe o ID do usuário (inteiro válido, tabela users).'
+    return
+  }
+
   saving.value = true
   errorMsg.value = ''
+  const payload = {
+    id_empresa: idEmpresaAlvo,
+    id_user: idUser,
+    full_name: form.value.full_name.trim(),
+    cpf: form.value.cpf.trim() || undefined,
+    phone: form.value.phone.trim() || undefined,
+    position: form.value.position.trim() || undefined,
+    status: form.value.status,
+  }
   try {
     if (editing.value) {
-      await colaboradorApi.update(auth.empresaId, editing.value.id, form.value)
+      await colaboradorApi.update(idEmpresaAlvo, editing.value.id, payload)
       successMsg.value = 'Colaborador atualizado!'
     } else {
-      await colaboradorApi.create(auth.empresaId, form.value)
+      await colaboradorApi.create(idEmpresaAlvo, payload)
       successMsg.value = 'Colaborador criado!'
     }
     showModal.value = false
@@ -120,7 +162,12 @@ async function fetchColaboradores() {
   }
 }
 
-onMounted(fetchColaboradores)
+onMounted(async () => {
+  if (auth.empresaId && !auth.empresa) {
+    await auth.fetchEmpresa()
+  }
+  await fetchColaboradores()
+})
 </script>
 
 <template>
@@ -232,8 +279,53 @@ onMounted(fetchColaboradores)
               </div>
 
               <form @submit.prevent="handleSave" class="modal-body">
+                <div v-if="empresaReadonly" class="field field-readonly">
+                  <label>Empresa</label>
+                  <div class="readonly-box">
+                    <span class="material-symbols-rounded readonly-icon">business</span>
+                    <div class="readonly-text">
+                      <span class="readonly-main">{{
+                        auth.empresa?.enterprise ?? 'Sua empresa'
+                      }}</span>
+                      <span class="readonly-sub">ID: {{ auth.empresaId }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else class="field">
+                  <label for="id_empresa">ID da empresa</label>
+                  <input
+                    id="id_empresa"
+                    v-model="form.id_empresa"
+                    type="number"
+                    min="1"
+                    step="1"
+                    required
+                    placeholder="Ex.: 1"
+                  />
+                  <p class="field-hint">
+                    Mesmo valor usado na URL da API (<code>/colaborador/:id_empresa</code>).
+                  </p>
+                </div>
+
                 <div class="field">
-                  <label for="fullname">Nome Completo</label>
+                  <label for="id_user">ID do usuário</label>
+                  <input
+                    id="id_user"
+                    v-model="form.id_user"
+                    type="number"
+                    min="1"
+                    step="1"
+                    required
+                    placeholder="ID na tabela users"
+                  />
+                  <p class="field-hint">
+                    Colaborador fica vinculado a um usuário já existente (campo obrigatório na API).
+                  </p>
+                </div>
+
+                <div class="field">
+                  <label for="fullname">Nome completo</label>
                   <input id="fullname" v-model="form.full_name" required placeholder="Nome completo" />
                 </div>
 
@@ -251,6 +343,15 @@ onMounted(fetchColaboradores)
                     <label for="position">Cargo</label>
                     <input id="position" v-model="form.position" placeholder="Cargo" />
                   </div>
+                </div>
+
+                <div class="field">
+                  <label for="colab-status">Status</label>
+                  <select id="colab-status" v-model="form.status" required>
+                    <option v-for="s in statusOptions" :key="s.value" :value="s.value">
+                      {{ s.label }}
+                    </option>
+                  </select>
                 </div>
 
                 <button type="submit" class="btn-primary btn-full" :disabled="saving">
@@ -549,6 +650,72 @@ onMounted(fetchColaboradores)
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(26, 26, 46, 0.06);
   background: var(--color-surface);
+}
+
+.field select {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 0.88rem;
+  color: var(--color-text);
+  transition: all 0.15s;
+  cursor: pointer;
+}
+
+.field select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(26, 26, 46, 0.06);
+  background: var(--color-surface);
+}
+
+.field-hint {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+.field-hint code {
+  font-size: 0.68rem;
+  background: var(--color-border-light);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.readonly-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.readonly-icon {
+  font-size: 24px;
+  color: var(--color-primary);
+}
+
+.readonly-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.readonly-main {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.readonly-sub {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 
 .field-row {

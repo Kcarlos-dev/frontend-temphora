@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth'
 import { pontoApi } from '@/services/api'
 import type { Ponto } from '@/types'
 import { formatDataHoraLocal } from '@/utils/datetime'
+import { compressImageFileIfNeeded } from '@/utils/compressImage'
 import AppLayout from '@/components/layout/AppLayout.vue'
 
 const auth = useAuthStore()
@@ -141,7 +142,8 @@ async function registrarPonto() {
     }
 
     if (fotoFile.value) {
-      form.append('foto', fotoFile.value)
+      const foto = await compressImageFileIfNeeded(fotoFile.value)
+      form.append('foto', foto)
     }
 
     await pontoApi.create(auth.empresaId, form)
@@ -154,7 +156,15 @@ async function registrarPonto() {
     if (fileInputRef.value) fileInputRef.value.value = ''
     await fetchPontos()
   } catch (err: any) {
-    errorMsg.value = err.response?.data?.message ?? 'Erro ao registrar ponto'
+    const status = err.response?.status
+    const apiMsg = err.response?.data?.message
+    if (status === 413) {
+      errorMsg.value =
+        apiMsg ??
+        'Arquivo grande demais. Tente outra foto ou peça para aumentarem o limite no servidor (ex.: nginx).'
+    } else {
+      errorMsg.value = apiMsg ?? 'Erro ao registrar ponto'
+    }
   } finally {
     registering.value = false
   }

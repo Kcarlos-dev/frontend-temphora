@@ -8,6 +8,7 @@ import {
   fimDiaLocalFromInputDate,
   inicioDiaLocalFromInputDate,
 } from '@/utils/datetime'
+import { compressImageFileIfNeeded } from '@/utils/compressImage'
 import AppLayout from '@/components/layout/AppLayout.vue'
 
 const auth = useAuthStore()
@@ -144,7 +145,8 @@ async function handleSave() {
       )
       fd.append('data_fim', formatDataHoraLocal(fimDiaLocalFromInputDate(form.value.data_fim)))
       fd.append('status', form.value.status)
-      fd.append('arquivo', arquivoNovo.value!)
+      const arquivo = await compressImageFileIfNeeded(arquivoNovo.value!)
+      fd.append('arquivo', arquivo)
       await atestadoApi.create(auth.empresaId, auth.colaboradorId, fd)
       successMsg.value = 'Atestado criado!'
       arquivoNovo.value = null

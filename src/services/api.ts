@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { type InternalAxiosRequestConfig } from 'axios'
 import type { Empresa, Colaborador, Ponto, Atestado, User } from '@/types'
 
 const api = axios.create({
@@ -6,10 +6,18 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem('temphora_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  // FormData: não fixar Content-Type — o Safari (iOS) precisa do boundary gerado pelo navegador.
+  // "multipart/form-data" sem boundary ou o default "application/json" quebram upload no iPhone.
+  if (config.data instanceof FormData) {
+    const h = config.headers
+    if (h && typeof h.delete === 'function') {
+      h.delete('Content-Type')
+    }
   }
   return config
 })
@@ -71,9 +79,7 @@ export const pontoApi = {
     return api.get<Ponto[]>(`/ponto/${idEmpresa}/${idColaborador}`)
   },
   create(idEmpresa: number, data: FormData) {
-    return api.post<Ponto>(`/ponto/${idEmpresa}`, data, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
+    return api.post<Ponto>(`/ponto/${idEmpresa}`, data)
   },
   update(idEmpresa: number, id: number, data: Partial<Ponto>) {
     return api.put<Ponto>(`/ponto/${idEmpresa}/${id}`, data)
@@ -109,9 +115,7 @@ export const atestadoApi = {
   },
   /** multipart/form-data: id_colaborador, data_inicio, data_fim, status e arquivo no campo `arquivo` (o app exige anexo ao criar). */
   create(idEmpresa: number, idColaborador: number, data: FormData) {
-    return api.post<Atestado>(`/atestado/${idEmpresa}/${idColaborador}`, data, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
+    return api.post<Atestado>(`/atestado/${idEmpresa}/${idColaborador}`, data)
   },
   update(idEmpresa: number, id: number, data: Partial<Atestado>) {
     return api.put<Atestado>(`/atestado/${idEmpresa}/${id}`, data)
