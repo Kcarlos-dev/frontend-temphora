@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { userApi } from '@/services/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import { normalizeEmail } from '@/utils/inputFormat'
 
 const auth = useAuthStore()
 
@@ -30,7 +31,7 @@ async function handleSubmit() {
   try {
     await userApi.create(idEmpresa, {
       name: form.value.name.trim(),
-      email: form.value.email.trim(),
+      email: normalizeEmail(form.value.email),
       password: form.value.password,
       role: form.value.role,
     })
@@ -105,6 +106,11 @@ async function handleSubmit() {
               type="email"
               required
               autocomplete="email"
+              inputmode="email"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="nome@empresa.com"
+              @blur="form.email = normalizeEmail(form.email)"
             />
           </div>
           <div class="field">

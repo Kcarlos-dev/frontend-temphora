@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { normalizeEmail } from '@/utils/inputFormat'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -10,9 +11,13 @@ const email = ref('')
 const password = ref('')
 const showPassword = ref(false)
 
+function blurEmailLogin() {
+  email.value = normalizeEmail(email.value)
+}
+
 async function handleLogin() {
   try {
-    await auth.login(email.value, password.value)
+    await auth.login(normalizeEmail(email.value), password.value)
     router.push('/dashboard')
   } catch {
     // error is set in store
@@ -51,6 +56,10 @@ async function handleLogin() {
                 placeholder="seu@email.com"
                 required
                 autocomplete="email"
+                inputmode="email"
+                autocapitalize="off"
+                spellcheck="false"
+                @blur="blurEmailLogin"
               />
             </div>
           </div>

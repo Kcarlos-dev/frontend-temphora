@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth'
 import { colaboradorApi } from '@/services/api'
 import type { Colaborador } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import { maskCpf, maskPhoneBr, onlyDigits } from '@/utils/inputFormat'
 
 const auth = useAuthStore()
 const colaboradores = ref<Colaborador[]>([])
@@ -113,12 +114,14 @@ async function handleSave() {
 
   saving.value = true
   errorMsg.value = ''
+  const cpfDigits = onlyDigits(form.value.cpf)
+  const phoneDigits = onlyDigits(form.value.phone)
   const payload = {
     id_empresa: idEmpresaAlvo,
     id_user: idUser,
     full_name: form.value.full_name.trim(),
-    cpf: form.value.cpf.trim() || undefined,
-    phone: form.value.phone.trim() || undefined,
+    cpf: cpfDigits || undefined,
+    phone: phoneDigits || undefined,
     position: form.value.position.trim() || undefined,
     status: form.value.status,
   }
@@ -331,13 +334,29 @@ onMounted(async () => {
 
                 <div class="field">
                   <label for="cpf">CPF</label>
-                  <input id="cpf" v-model="form.cpf" placeholder="000.000.000-00" />
+                  <input
+                    id="cpf"
+                    v-model="form.cpf"
+                    v-maska="{ mask: maskCpf }"
+                    type="text"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    placeholder="000.000.000-00"
+                  />
                 </div>
 
                 <div class="field-row">
                   <div class="field">
                     <label for="phone">Telefone</label>
-                    <input id="phone" v-model="form.phone" placeholder="(00) 00000-0000" />
+                    <input
+                      id="phone"
+                      v-model="form.phone"
+                      v-maska="{ mask: maskPhoneBr }"
+                      type="text"
+                      inputmode="tel"
+                      autocomplete="tel"
+                      placeholder="(00) 00000-0000"
+                    />
                   </div>
                   <div class="field">
                     <label for="position">Cargo</label>

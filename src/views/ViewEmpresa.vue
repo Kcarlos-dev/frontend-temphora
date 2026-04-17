@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/auth'
 import { empresaApi } from '@/services/api'
 import type { Empresa } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import { maskCnpj, maskPhoneBr, normalizeEmail } from '@/utils/inputFormat'
 
 const auth = useAuthStore()
 const empresa = ref<Empresa | null>(null)
@@ -36,10 +37,15 @@ function cancelEdit() {
   errorMsg.value = ''
 }
 
+function blurEmailEmpresa() {
+  form.value.email = normalizeEmail(form.value.email)
+}
+
 async function handleSave() {
   if (!auth.empresaId) return
   saving.value = true
   errorMsg.value = ''
+  form.value.email = normalizeEmail(form.value.email)
   try {
     const res = await empresaApi.update(auth.empresaId, form.value)
     empresa.value = res.data
@@ -140,15 +146,42 @@ onMounted(async () => {
             </div>
             <div class="field">
               <label for="cnpj">CNPJ</label>
-              <input id="cnpj" v-model="form.cnpj" required />
+              <input
+                id="cnpj"
+                v-model="form.cnpj"
+                v-maska="{ mask: maskCnpj }"
+                type="text"
+                inputmode="numeric"
+                required
+                placeholder="00.000.000/0000-00"
+              />
             </div>
             <div class="field">
               <label for="email">Email</label>
-              <input id="email" v-model="form.email" type="email" required />
+              <input
+                id="email"
+                v-model="form.email"
+                type="email"
+                required
+                autocomplete="email"
+                inputmode="email"
+                autocapitalize="off"
+                spellcheck="false"
+                placeholder="contato@empresa.com.br"
+                @blur="blurEmailEmpresa"
+              />
             </div>
             <div class="field">
               <label for="phone">Telefone</label>
-              <input id="phone" v-model="form.phone" placeholder="(00) 00000-0000" />
+              <input
+                id="phone"
+                v-model="form.phone"
+                v-maska="{ mask: maskPhoneBr }"
+                type="text"
+                inputmode="tel"
+                autocomplete="tel"
+                placeholder="(00) 00000-0000"
+              />
             </div>
 
             <div class="form-actions">

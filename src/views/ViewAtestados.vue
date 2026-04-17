@@ -10,6 +10,7 @@ import {
 } from '@/utils/datetime'
 import { compressImageFileIfNeeded } from '@/utils/compressImage'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import { maskCpf } from '@/utils/inputFormat'
 
 const auth = useAuthStore()
 const atestados = ref<Atestado[]>([])
@@ -279,10 +280,11 @@ async function confirmarCpf() {
           <div class="cpf-gate-row">
             <input
               v-model="cpfInput"
+              v-maska="{ mask: maskCpf }"
               type="text"
               class="cpf-input"
               placeholder="000.000.000-00"
-              maxlength="14"
+              inputmode="numeric"
               autocomplete="off"
             />
             <button type="button" class="btn-primary" @click="confirmarCpf">Carregar</button>
