@@ -197,7 +197,11 @@ onMounted(async () => {
 
       <div v-else class="empty-state">
         <span class="material-symbols-rounded empty-icon">business</span>
-        <p>Nenhuma empresa vinculada</p>
+        <p>Nenhuma empresa vinculada ao seu usuário.</p>
+        <RouterLink v-if="auth.isRoot" to="/nova-empresa" class="empty-cta">
+          <span class="material-symbols-rounded">add_business</span>
+          Cadastrar nova empresa
+        </RouterLink>
       </div>
     </div>
   </AppLayout>
@@ -399,9 +403,23 @@ onMounted(async () => {
   margin-top: 8px;
 }
 
-.empty-state { text-align: center; padding: 50px 20px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
-.empty-icon { font-size: 40px; color: var(--color-text-muted); margin-bottom: 8px; }
-.empty-state p { color: var(--color-text-secondary); font-size: 0.88rem; }
+.empty-state { text-align: center; padding: 50px 20px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.empty-icon { font-size: 40px; color: var(--color-text-muted); margin-bottom: 0; }
+.empty-state p { color: var(--color-text-secondary); font-size: 0.88rem; margin: 0; }
+.empty-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px 18px;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.empty-cta:hover { opacity: 0.92; }
+.empty-cta .material-symbols-rounded { font-size: 20px; }
 
 @media (max-width: 480px) {
   .btn-text { display: none; }

@@ -44,6 +44,12 @@ const router = createRouter({
       meta: { roles: ['root'] },
     },
     {
+      path: '/nova-empresa',
+      name: 'nova-empresa',
+      component: () => import('@/views/ViewNovaEmpresa.vue'),
+      meta: { roles: ['root'] },
+    },
+    {
       path: '/',
       redirect: '/dashboard',
     },
