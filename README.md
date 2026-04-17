@@ -151,3 +151,5 @@ gcloud run deploy temphora-frontend \
 ```
 
 No Cloud Run, defina `API_URL` como variável de ambiente do serviço (via console ou `--set-env-vars`). O entrypoint do container injeta esse valor no nginx automaticamente antes de iniciar.
+
+**Login /api falhando no Cloud Run:** o nginx não deve enviar `Host` com o hostname do *frontend* para o backend (o serviço da API no Run espera o próprio host). A configuração atual deixa o `Host` ser o do upstream. Confira também se `API_URL` é a URL **HTTPS** completa do serviço da API (sem `/` no final), por exemplo `https://api-temphora-xxxxx.us-central1.run.app`.
