@@ -51,7 +51,9 @@ export const colaboradorApi = {
     return api.get<Colaborador[]>(`/colaborador/${idEmpresa}`)
   },
   getByCpf(idEmpresa: number, cpf: string) {
-    return api.get<Colaborador>(`/colaborador/${idEmpresa}/${cpf}`)
+    return api.get<Colaborador>(
+      `/colaborador/${idEmpresa}/${encodeURIComponent(cpf)}`,
+    )
   },
   create(idEmpresa: number, data: Partial<Colaborador>) {
     return api.post<Colaborador>(`/colaborador/${idEmpresa}`, data)
@@ -87,11 +89,17 @@ export const pontoApi = {
 }
 
 export const atestadoApi = {
-  list(idEmpresa: number, idColaborador: number) {
-    return api.get<Atestado[]>(`/atestado/${idEmpresa}/${idColaborador}`)
+  /** Lista atestados do colaborador pelo CPF (rota atual da API). */
+  listByCpf(idEmpresa: number, cpf: string) {
+    return api.get<Atestado[]>(
+      `/atestado/${idEmpresa}/cpf/${encodeURIComponent(cpf)}`,
+    )
   },
-  create(idEmpresa: number, data: Partial<Atestado>) {
-    return api.post<Atestado>(`/atestado/${idEmpresa}`, data)
+  /** multipart/form-data: id_colaborador, data_inicio, data_fim, status e arquivo no campo `arquivo` (o app exige anexo ao criar). */
+  create(idEmpresa: number, idColaborador: number, data: FormData) {
+    return api.post<Atestado>(`/atestado/${idEmpresa}/${idColaborador}`, data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
   },
   update(idEmpresa: number, id: number, data: Partial<Atestado>) {
     return api.put<Atestado>(`/atestado/${idEmpresa}/${id}`, data)

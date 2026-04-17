@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { pontoApi, colaboradorApi, atestadoApi } from '@/services/api'
+import { pontoApi, colaboradorApi } from '@/services/api'
 import type { Ponto, Colaborador } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 

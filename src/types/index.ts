@@ -50,6 +50,8 @@ export interface Atestado {
   data_inicio: string
   data_fim: string
   arquivo: string | null
+  /** URL assinada (GCS) para exibir o anexo — preenchida pela API. */
+  arquivo_url?: string | null
   status: string
 }
 

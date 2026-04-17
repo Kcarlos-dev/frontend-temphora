@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { pontoApi } from '@/services/api'
 import type { Ponto } from '@/types'
+import { formatDataHoraLocal } from '@/utils/datetime'
 import AppLayout from '@/components/layout/AppLayout.vue'
 
 const auth = useAuthStore()
@@ -66,10 +67,7 @@ async function registrarPonto() {
     const form = new FormData()
     form.append('id_colaborador', String(auth.colaboradorId))
     form.append('tipo', selectedTipo.value)
-    const now = new Date()
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const dataHora = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
-    form.append('data_hora', dataHora)
+    form.append('data_hora', formatDataHoraLocal(new Date()))
 
     if (navigator.geolocation) {
       try {
@@ -193,6 +191,16 @@ onMounted(fetchPontos)
                 <div class="ponto-dot">
                   <span class="material-symbols-rounded">{{ tipoIcon(ponto.tipo) }}</span>
                 </div>
+                <a
+                  v-if="ponto.foto_url"
+                  :href="ponto.foto_url"
+                  class="ponto-thumb-link"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Abrir foto do registro"
+                >
+                  <img :src="ponto.foto_url" alt="" class="ponto-thumb" />
+                </a>
                 <div class="ponto-info">
                   <span class="ponto-tipo">{{ tipoLabel(ponto.tipo) }}</span>
                   <span v-if="ponto.latitude" class="ponto-location">
@@ -425,6 +433,20 @@ onMounted(fetchPontos)
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+}
+
+.ponto-thumb-link {
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border-light);
+}
+
+.ponto-thumb {
+  display: block;
+  width: 52px;
+  height: 52px;
+  object-fit: cover;
 }
 
 .ponto-item {

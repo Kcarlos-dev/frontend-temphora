@@ -1,18 +1,63 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { atestadoApi } from '@/services/api'
-import type { Atestado } from '@/types'
+import { atestadoApi, colaboradorApi } from '@/services/api'
+import type { Atestado, Colaborador } from '@/types'
+import {
+  formatDataHoraLocal,
+  fimDiaLocalFromInputDate,
+  inicioDiaLocalFromInputDate,
+} from '@/utils/datetime'
 import AppLayout from '@/components/layout/AppLayout.vue'
 
 const auth = useAuthStore()
 const atestados = ref<Atestado[]>([])
-const loading = ref(true)
+const loading = ref(false)
 const showModal = ref(false)
 const editing = ref<Atestado | null>(null)
 const saving = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
+
+const cpfColaborador = ref<string | null>(null)
+const cpfInput = ref('')
+const arquivoNovo = ref<File | null>(null)
+
+function apenasDigitosCpf(s: string) {
+  return s.replace(/\D/g, '')
+}
+
+/** GET /colaborador/:id_empresa/:cpf — tenta só dígitos, depois o texto como digitado. */
+async function buscarColaboradorPorCpfInformado(
+  idEmpresa: number,
+  digitos: string,
+  textoBruto: string,
+): Promise<Colaborador> {
+  try {
+    const res = await colaboradorApi.getByCpf(idEmpresa, digitos)
+    return res.data
+  } catch {
+    if (textoBruto !== digitos) {
+      try {
+        const res = await colaboradorApi.getByCpf(idEmpresa, textoBruto)
+        return res.data
+      } catch {
+        throw new Error('cpf_nao_encontrado')
+      }
+    }
+    throw new Error('cpf_nao_encontrado')
+  }
+}
+
+const precisaInformarCpf = computed(() => {
+  if (!auth.empresaId || cpfColaborador.value || loading.value) return false
+  if (auth.userRole === 'colaborador' && !auth.colaboradorId) return false
+  return true
+})
+
+const temVinculoInvalido = computed(
+  () => !auth.empresaId || (auth.userRole === 'colaborador' && !auth.colaboradorId),
+)
 
 const form = ref({
   id_colaborador: auth.colaboradorId ?? 0,
@@ -43,6 +88,7 @@ function statusColor(status: string) {
 
 function openNew() {
   editing.value = null
+  arquivoNovo.value = null
   form.value = {
     id_colaborador: auth.colaboradorId ?? 0,
     data_inicio: '',
@@ -65,25 +111,46 @@ function openEdit(atestado: Atestado) {
   showModal.value = true
 }
 
+function onArquivoChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  arquivoNovo.value = target.files?.[0] ?? null
+}
+
 async function handleSave() {
-  if (!auth.empresaId) return
+  if (!auth.empresaId || !auth.colaboradorId) return
+  if (!editing.value && !arquivoNovo.value) {
+    errorMsg.value = 'É obrigatório anexar o arquivo do atestado (imagem).'
+    return
+  }
   saving.value = true
   errorMsg.value = ''
   try {
-    const payload = {
-      ...form.value,
-      data_inicio: new Date(form.value.data_inicio).toISOString(),
-      data_fim: new Date(form.value.data_fim).toISOString(),
-    }
     if (editing.value) {
+      const payload = {
+        id_colaborador: form.value.id_colaborador,
+        data_inicio: formatDataHoraLocal(inicioDiaLocalFromInputDate(form.value.data_inicio)),
+        data_fim: formatDataHoraLocal(fimDiaLocalFromInputDate(form.value.data_fim)),
+        arquivo: form.value.arquivo || null,
+        status: form.value.status,
+      }
       await atestadoApi.update(auth.empresaId, editing.value.id, payload)
       successMsg.value = 'Atestado atualizado!'
     } else {
-      await atestadoApi.create(auth.empresaId, payload)
+      const fd = new FormData()
+      fd.append('id_colaborador', String(auth.colaboradorId))
+      fd.append(
+        'data_inicio',
+        formatDataHoraLocal(inicioDiaLocalFromInputDate(form.value.data_inicio)),
+      )
+      fd.append('data_fim', formatDataHoraLocal(fimDiaLocalFromInputDate(form.value.data_fim)))
+      fd.append('status', form.value.status)
+      fd.append('arquivo', arquivoNovo.value!)
+      await atestadoApi.create(auth.empresaId, auth.colaboradorId, fd)
       successMsg.value = 'Atestado criado!'
+      arquivoNovo.value = null
     }
     showModal.value = false
-    await fetchAtestados()
+    await loadAtestados()
   } catch (err: any) {
     errorMsg.value = err.response?.data?.message ?? 'Erro ao salvar'
   } finally {
@@ -95,26 +162,65 @@ async function handleDelete(id: number) {
   if (!auth.empresaId || !confirm('Tem certeza que deseja excluir?')) return
   try {
     await atestadoApi.remove(auth.empresaId, id)
-    await fetchAtestados()
+    await loadAtestados()
     successMsg.value = 'Atestado excluído!'
   } catch (err: any) {
     errorMsg.value = err.response?.data?.message ?? 'Erro ao excluir'
   }
 }
 
-async function fetchAtestados() {
-  if (!auth.empresaId || !auth.colaboradorId) return
+async function loadAtestados() {
+  if (!auth.empresaId || !cpfColaborador.value) return
   try {
-    const res = await atestadoApi.list(auth.empresaId, auth.colaboradorId)
+    const res = await atestadoApi.listByCpf(auth.empresaId, cpfColaborador.value)
     atestados.value = res.data
-  } catch {
-    // silent
+  } catch (err: any) {
+    if (err.response?.status === 404) {
+      atestados.value = []
+    } else {
+      errorMsg.value = err.response?.data?.message ?? 'Erro ao carregar atestados'
+    }
+  }
+}
+
+async function confirmarCpf() {
+  const bruto = cpfInput.value.trim()
+  if (!bruto || !auth.empresaId) return
+  if (auth.userRole === 'colaborador' && !auth.colaboradorId) return
+  const digitos = apenasDigitosCpf(bruto)
+  if (digitos.length !== 11) {
+    errorMsg.value = 'Informe um CPF válido (11 dígitos).'
+    return
+  }
+
+  loading.value = true
+  errorMsg.value = ''
+  try {
+    const colab = await buscarColaboradorPorCpfInformado(auth.empresaId, digitos, bruto)
+
+    if (colab.id_empresa !== auth.empresaId) {
+      errorMsg.value = 'Este CPF não pertence à sua empresa.'
+      return
+    }
+
+    if (auth.userRole === 'colaborador' && colab.id !== auth.colaboradorId) {
+      errorMsg.value = 'Você só pode consultar atestados do seu próprio CPF.'
+      return
+    }
+
+    cpfColaborador.value = colab.cpf?.trim() || digitos
+    await loadAtestados()
+  } catch (err: any) {
+    if (err?.message === 'cpf_nao_encontrado') {
+      errorMsg.value = 'CPF não encontrado no cadastro.'
+    } else {
+      errorMsg.value = err.response?.data?.message ?? 'Não foi possível validar o CPF.'
+    }
   } finally {
     loading.value = false
   }
 }
 
-onMounted(fetchAtestados)
 </script>
 
 <template>
@@ -125,7 +231,12 @@ onMounted(fetchAtestados)
           <h1>Atestados</h1>
           <p class="page-subtitle">Gerencie atestados e certificados médicos</p>
         </div>
-        <button class="btn-primary" @click="openNew">
+        <button
+          class="btn-primary"
+          type="button"
+          :disabled="!auth.empresaId || !auth.colaboradorId || !cpfColaborador"
+          @click="openNew"
+        >
           <span class="material-symbols-rounded">add</span>
           <span class="btn-text">Novo</span>
         </button>
@@ -147,9 +258,35 @@ onMounted(fetchAtestados)
         </button>
       </div>
 
-      <div v-if="loading" class="loading-state">
+      <div v-if="temVinculoInvalido" class="alert error">
+        <span class="material-symbols-rounded">error</span>
+        <span v-if="!auth.empresaId">É necessário vínculo com uma empresa.</span>
+        <span v-else>Perfil colaborador precisa estar vinculado a um cadastro de colaborador.</span>
+      </div>
+
+      <div v-else-if="loading" class="loading-state">
         <span class="spinner-lg" />
       </div>
+
+      <template v-else-if="precisaInformarCpf">
+        <div class="cpf-gate">
+          <p class="cpf-gate-title">CPF necessário para buscar atestados</p>
+          <p class="cpf-gate-hint">
+            Informe o CPF do colaborador cujos atestados deseja ver (validado em colaboradores). Admin, root e RH podem consultar qualquer CPF da empresa; colaborador só o próprio.
+          </p>
+          <div class="cpf-gate-row">
+            <input
+              v-model="cpfInput"
+              type="text"
+              class="cpf-input"
+              placeholder="000.000.000-00"
+              maxlength="14"
+              autocomplete="off"
+            />
+            <button type="button" class="btn-primary" @click="confirmarCpf">Carregar</button>
+          </div>
+        </div>
+      </template>
 
       <template v-else>
         <div v-if="sortedAtestados.length === 0" class="empty-state">
@@ -167,9 +304,20 @@ onMounted(fetchAtestados)
                 <div class="atestado-dates">
                   {{ formatDate(atestado.data_inicio) }} — {{ formatDate(atestado.data_fim) }}
                 </div>
-                <div v-if="atestado.arquivo" class="atestado-file">
+                <div v-if="atestado.arquivo_url" class="atestado-preview">
+                  <a
+                    :href="atestado.arquivo_url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="atestado-thumb-link"
+                  >
+                    <img :src="atestado.arquivo_url" alt="Anexo do atestado" class="atestado-thumb" />
+                  </a>
+                  <span class="atestado-file-label">Anexo</span>
+                </div>
+                <div v-else-if="atestado.arquivo" class="atestado-file">
                   <span class="material-symbols-rounded" style="font-size: 14px;">attach_file</span>
-                  Documento anexado
+                  Documento anexado (URL indisponível)
                 </div>
               </div>
               <span class="status-pill" :class="statusColor(atestado.status)">
@@ -187,7 +335,7 @@ onMounted(fetchAtestados)
                 Editar
               </button>
               <button
-                v-if="auth.isAdmin || auth.userRole === 'admin'"
+                v-if="['admin', 'root'].includes(auth.userRole)"
                 class="action-btn danger"
                 @click="handleDelete(atestado.id)"
               >
@@ -221,6 +369,18 @@ onMounted(fetchAtestados)
                     <label for="data_fim">Data Fim</label>
                     <input id="data_fim" v-model="form.data_fim" type="date" required />
                   </div>
+                </div>
+
+                <div v-if="!editing" class="field">
+                  <label for="arquivo_atestado">Anexo do atestado (imagem, obrigatório)</label>
+                  <input
+                    id="arquivo_atestado"
+                    type="file"
+                    required
+                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                    @change="onArquivoChange"
+                  />
+                  <p v-if="arquivoNovo" class="file-hint">{{ arquivoNovo.name }}</p>
                 </div>
 
                 <div v-if="auth.isAdmin" class="field">
@@ -283,8 +443,53 @@ onMounted(fetchAtestados)
   transition: opacity 0.15s;
 }
 
-.btn-primary:hover { opacity: 0.92; }
+.btn-primary:hover:not(:disabled) { opacity: 0.92; }
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-primary .material-symbols-rounded { font-size: 18px; }
+
+.cpf-gate {
+  padding: 20px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+}
+
+.cpf-gate-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin-bottom: 6px;
+}
+
+.cpf-gate-hint {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 14px;
+  line-height: 1.4;
+}
+
+.cpf-gate-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.cpf-input {
+  flex: 1;
+  min-width: 180px;
+  padding: 11px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 0.88rem;
+}
+
+.file-hint {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
+  margin-top: 6px;
+}
 
 .alert {
   display: flex;
@@ -355,6 +560,32 @@ onMounted(fetchAtestados)
 .atestado-dates {
   font-size: 0.88rem;
   font-weight: 600;
+}
+
+.atestado-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.atestado-thumb-link {
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border-light);
+}
+
+.atestado-thumb {
+  display: block;
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+}
+
+.atestado-file-label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
 }
 
 .atestado-file {
