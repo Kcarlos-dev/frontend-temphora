@@ -1,5 +1,5 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios'
-import type { Empresa, Colaborador, Ponto, Atestado, User } from '@/types'
+import type { Empresa, Colaborador, Ponto, PontoEmpresaPage, Atestado, User } from '@/types'
 
 const api = axios.create({
   baseURL: '/api',
@@ -77,6 +77,11 @@ export const colaboradorApi = {
 export const pontoApi = {
   list(idEmpresa: number, idColaborador: number) {
     return api.get<Ponto[]>(`/ponto/${idEmpresa}/${idColaborador}`)
+  },
+  listByEmpresa(idEmpresa: number, page = 1, pageSize = 20) {
+    return api.get<PontoEmpresaPage>(`/ponto/${idEmpresa}`, {
+      params: { page, pageSize },
+    })
   },
   create(idEmpresa: number, data: FormData) {
     return api.post<Ponto>(`/ponto/${idEmpresa}`, data)

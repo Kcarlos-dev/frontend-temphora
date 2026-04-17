@@ -22,6 +22,22 @@ const geoHint = ref<string | null>(null)
 const successMsg = ref('')
 const errorMsg = ref('')
 
+// Paginação: usada no modo gestor (admin/rh/root) para navegar nos pontos da empresa.
+const page = ref(1)
+const pageSize = ref(20)
+const totalPages = ref(1)
+const total = ref(0)
+
+const isManagerView = computed(() =>
+  ['admin', 'rh', 'root'].includes(auth.userRole),
+)
+const canExportCsv = computed(() =>
+  ['admin', 'root'].includes(auth.userRole),
+)
+const canRegistrarPonto = computed(
+  () => auth.colaboradorId != null && auth.empresaId != null,
+)
+
 function formatCoord(n: number): string {
   return n.toFixed(6)
 }
@@ -170,8 +186,11 @@ async function registrarPonto() {
   }
 }
 
-async function fetchPontos() {
-  if (!auth.empresaId || !auth.colaboradorId) return
+async function fetchPontosPessoais() {
+  if (!auth.empresaId || !auth.colaboradorId) {
+    loading.value = false
+    return
+  }
   try {
     const res = await pontoApi.list(auth.empresaId, auth.colaboradorId)
     pontos.value = res.data
@@ -180,6 +199,43 @@ async function fetchPontos() {
   } finally {
     loading.value = false
   }
+}
+
+async function fetchPontosEmpresa() {
+  if (!auth.empresaId) {
+    loading.value = false
+    return
+  }
+  loading.value = true
+  try {
+    const res = await pontoApi.listByEmpresa(
+      auth.empresaId,
+      page.value,
+      pageSize.value,
+    )
+    pontos.value = res.data.data
+    total.value = res.data.total
+    totalPages.value = res.data.totalPages
+    page.value = res.data.page
+  } catch {
+    errorMsg.value = 'Erro ao carregar pontos da empresa'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function fetchPontos() {
+  if (isManagerView.value) {
+    await fetchPontosEmpresa()
+  } else {
+    await fetchPontosPessoais()
+  }
+}
+
+async function goToPage(next: number) {
+  if (next < 1 || next > totalPages.value || next === page.value) return
+  page.value = next
+  await fetchPontosEmpresa()
 }
 
 async function exportarCsv() {
@@ -236,14 +292,28 @@ onMounted(fetchPontos)
           <p class="page-subtitle">Gerencie seus registros de entrada e saída</p>
         </div>
         <div class="header-actions">
-          <button class="btn-primary" @click="showModal = true">
+          <button
+            v-if="canRegistrarPonto"
+            class="btn-primary"
+            @click="showModal = true"
+          >
             <span class="material-symbols-rounded">add</span>
             <span class="btn-text">Registrar</span>
           </button>
         </div>
       </header>
 
-      <div class="export-toolbar">
+      <div v-if="isManagerView" class="empresa-banner">
+        <span class="material-symbols-rounded">groups</span>
+        <span>
+          Exibindo pontos de todos os colaboradores da empresa
+          <template v-if="total > 0">
+            — <strong>{{ total }}</strong> registro(s)
+          </template>
+        </span>
+      </div>
+
+      <div v-if="canExportCsv" class="export-toolbar">
         <span class="export-toolbar-title">Exportar CSV</span>
         <div class="export-toolbar-row">
           <div class="export-field">
@@ -316,6 +386,12 @@ onMounted(fetchPontos)
                   <img :src="ponto.foto_url" alt="" class="ponto-thumb" />
                 </a>
                 <div class="ponto-info">
+                  <span
+                    v-if="isManagerView && ponto.colaborador_nome"
+                    class="ponto-colab"
+                  >
+                    {{ ponto.colaborador_nome }}
+                  </span>
                   <span class="ponto-tipo">{{ tipoLabel(ponto.tipo) }}</span>
                   <span v-if="ponto.latitude" class="ponto-location">
                     <span class="material-symbols-rounded" style="font-size: 12px;">location_on</span>
@@ -327,6 +403,34 @@ onMounted(fetchPontos)
             </div>
           </div>
         </div>
+
+        <nav
+          v-if="isManagerView && totalPages > 1"
+          class="pagination"
+          aria-label="Paginação de pontos"
+        >
+          <button
+            type="button"
+            class="btn-outline pagination-btn"
+            :disabled="page <= 1"
+            @click="goToPage(page - 1)"
+          >
+            <span class="material-symbols-rounded">chevron_left</span>
+            <span class="btn-text">Anterior</span>
+          </button>
+          <span class="pagination-info">
+            Página <strong>{{ page }}</strong> de <strong>{{ totalPages }}</strong>
+          </span>
+          <button
+            type="button"
+            class="btn-outline pagination-btn"
+            :disabled="page >= totalPages"
+            @click="goToPage(page + 1)"
+          >
+            <span class="btn-text">Próxima</span>
+            <span class="material-symbols-rounded">chevron_right</span>
+          </button>
+        </nav>
       </template>
 
       <!-- Modal Registrar -->
@@ -441,6 +545,49 @@ onMounted(fetchPontos)
 .header-actions {
   display: flex;
   gap: 8px;
+}
+
+.empresa-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.empresa-banner .material-symbols-rounded {
+  font-size: 18px;
+  color: var(--color-primary);
+}
+
+.ponto-colab {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.pagination-info {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .export-toolbar {

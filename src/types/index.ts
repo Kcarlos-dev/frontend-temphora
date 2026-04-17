@@ -42,6 +42,16 @@ export interface Ponto {
   longitude: number | null
   foto: string | null
   foto_url?: string | null
+  colaborador_nome?: string | null
+  colaborador_cpf?: string | null
+}
+
+export interface PontoEmpresaPage {
+  data: Ponto[]
+  total: number
+  page: number
+  pageSize: number
+  totalPages: number
 }
 
 export interface Atestado {
