@@ -464,7 +464,7 @@ onMounted(fetchColaboradores)
 
 .status-badge.ativo { background: #ecfdf5; color: #059669; }
 .status-badge.inativo { background: #fef2f2; color: #dc2626; }
-.status-badge.ferias { background: #eff6ff; color: #2563eb; }
+.status-badge.ferias { background: var(--color-tint-brand-bg); color: var(--color-tint-brand-fg); }
 .status-badge.desligado { background: #f5f5f5; color: #737373; }
 
 .colab-actions {

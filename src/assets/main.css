@@ -1,31 +1,46 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --color-bg: #f4f6f8;
+  /* Marca — cores extraídas do logo (logo.svg / banner Temphora) */
+  --color-brand-navy: #090c26;
+  --color-brand-slate: #2b3452;
+  --color-brand-mid: #a7a6ae;
+  --color-brand-lavender: #d2c8ee;
+  --color-brand-charcoal: #2d2d2d;
+
+  --color-bg: #f5f4fa;
   --color-surface: #ffffff;
-  --color-sidebar: #1a1a2e;
-  --color-sidebar-hover: #25254a;
-  --color-primary: #1a1a2e;
-  --color-accent: #f5c542;
-  --color-accent-hover: #e0b23a;
-  --color-text: #2d3436;
-  --color-text-secondary: #636e72;
-  --color-text-muted: #b2bec3;
-  --color-border: #e9ecef;
-  --color-border-light: #f1f3f5;
-  --color-success: #2ecc71;
-  --color-danger: #e74c3c;
-  --color-warning: #f39c12;
-  --color-info: #3498db;
+  --color-sidebar: var(--color-brand-navy);
+  --color-sidebar-hover: #12162f;
+  --color-primary: var(--color-brand-slate);
+  --color-accent: var(--color-brand-lavender);
+  --color-accent-hover: #c4b5e0;
+  --color-text: #0f1224;
+  --color-text-secondary: #5c6170;
+  --color-text-muted: #9499aa;
+  --color-border: #e2e0eb;
+  --color-border-light: #efedf4;
+  --color-success: #1fa971;
+  --color-danger: #d94841;
+  --color-warning: #c17d12;
+  --color-info: var(--color-brand-slate);
+
+  /* Superfícies de destaque (cards / ícones) — harmonia com o lavanda da marca */
+  --color-tint-brand-bg: #ebe8f4;
+  --color-tint-brand-fg: var(--color-brand-slate);
+  --color-tint-success-bg: #e8f5f0;
+  --color-tint-success-fg: #157a52;
+  --color-tint-warning-bg: #f5f0e6;
+  --color-tint-warning-fg: #8a6914;
 
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 24px;
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 1px 3px rgba(9, 12, 38, 0.05);
+  --shadow-md: 0 4px 12px rgba(9, 12, 38, 0.07);
+  --shadow-lg: 0 10px 40px rgba(9, 12, 38, 0.09);
 
   --sidebar-width: 240px;
   --bottomnav-height: 64px;

@@ -99,7 +99,12 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-bg);
+  background: linear-gradient(
+    165deg,
+    var(--color-bg) 0%,
+    var(--color-tint-brand-bg) 42%,
+    var(--color-bg) 100%
+  );
   padding: 20px;
 }
 

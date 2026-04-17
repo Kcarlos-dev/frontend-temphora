@@ -110,8 +110,8 @@ onMounted(async () => {
       <template v-else>
         <div v-if="auth.isAdmin" class="stats-grid">
           <div class="stat-card">
-            <div class="stat-icon" style="background: #eef2ff">
-              <span class="material-symbols-rounded" style="color: #6366f1">group</span>
+            <div class="stat-icon stat-icon--brand">
+              <span class="material-symbols-rounded">group</span>
             </div>
             <div class="stat-info">
               <span class="stat-value">{{ stats.totalColab }}</span>
@@ -120,8 +120,8 @@ onMounted(async () => {
           </div>
 
           <div class="stat-card">
-            <div class="stat-icon" style="background: #ecfdf5">
-              <span class="material-symbols-rounded" style="color: #10b981">check_circle</span>
+            <div class="stat-icon stat-icon--success">
+              <span class="material-symbols-rounded">check_circle</span>
             </div>
             <div class="stat-info">
               <span class="stat-value">{{ stats.ativos }}</span>
@@ -130,8 +130,8 @@ onMounted(async () => {
           </div>
 
           <div class="stat-card">
-            <div class="stat-icon" style="background: #fef9c3">
-              <span class="material-symbols-rounded" style="color: #ca8a04">schedule</span>
+            <div class="stat-icon stat-icon--warning">
+              <span class="material-symbols-rounded">schedule</span>
             </div>
             <div class="stat-info">
               <span class="stat-value">{{ stats.registrosHoje }}</span>
@@ -262,6 +262,30 @@ onMounted(async () => {
 
 .stat-icon .material-symbols-rounded {
   font-size: 22px;
+}
+
+.stat-icon--brand {
+  background: var(--color-tint-brand-bg);
+}
+
+.stat-icon--brand .material-symbols-rounded {
+  color: var(--color-tint-brand-fg);
+}
+
+.stat-icon--success {
+  background: var(--color-tint-success-bg);
+}
+
+.stat-icon--success .material-symbols-rounded {
+  color: var(--color-tint-success-fg);
+}
+
+.stat-icon--warning {
+  background: var(--color-tint-warning-bg);
+}
+
+.stat-icon--warning .material-symbols-rounded {
+  color: var(--color-tint-warning-fg);
 }
 
 .stat-info {
@@ -446,8 +470,8 @@ onMounted(async () => {
 }
 
 .status-badge.ferias {
-  background: #eff6ff;
-  color: #2563eb;
+  background: var(--color-tint-brand-bg);
+  color: var(--color-tint-brand-fg);
 }
 
 .status-badge.desligado {

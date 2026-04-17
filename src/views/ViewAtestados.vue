@@ -540,7 +540,7 @@ async function confirmarCpf() {
   width: 40px;
   height: 40px;
   border-radius: var(--radius-md);
-  background: #eef2ff;
+  background: var(--color-tint-brand-bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -549,7 +549,7 @@ async function confirmarCpf() {
 
 .atestado-icon .material-symbols-rounded {
   font-size: 20px;
-  color: #6366f1;
+  color: var(--color-tint-brand-fg);
 }
 
 .atestado-info {

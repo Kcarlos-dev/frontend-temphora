@@ -570,8 +570,8 @@ onMounted(fetchPontos)
 }
 
 .tipo-option.selected {
-  border-color: var(--color-accent);
-  background: #fef9c3;
+  border-color: var(--color-primary);
+  background: var(--color-tint-brand-bg);
 }
 
 .tipo-icon {
