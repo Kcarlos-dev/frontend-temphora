@@ -38,6 +38,12 @@ const router = createRouter({
       meta: { roles: ['admin', 'root', 'rh'] },
     },
     {
+      path: '/usuarios',
+      name: 'usuarios',
+      component: () => import('@/views/ViewUsuarios.vue'),
+      meta: { roles: ['root'] },
+    },
+    {
       path: '/',
       redirect: '/dashboard',
     },

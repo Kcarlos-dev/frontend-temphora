@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { pontoApi } from '@/services/api'
 import type { Ponto } from '@/types'
@@ -13,8 +13,57 @@ const registering = ref(false)
 const showModal = ref(false)
 const selectedTipo = ref('entrada')
 const fotoFile = ref<File | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const geoLat = ref<number | null>(null)
+const geoLng = ref<number | null>(null)
+const geoLoading = ref(false)
+const geoHint = ref<string | null>(null)
 const successMsg = ref('')
 const errorMsg = ref('')
+
+function formatCoord(n: number): string {
+  return n.toFixed(6)
+}
+
+async function obterLocalizacao() {
+  if (!navigator.geolocation) {
+    geoHint.value = 'Geolocalização não disponível neste aparelho.'
+    geoLat.value = null
+    geoLng.value = null
+    return
+  }
+  geoLoading.value = true
+  geoHint.value = null
+  try {
+    const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0,
+      }),
+    )
+    geoLat.value = pos.coords.latitude
+    geoLng.value = pos.coords.longitude
+  } catch {
+    geoLat.value = null
+    geoLng.value = null
+    geoHint.value =
+      'Não foi possível obter latitude e longitude. Verifique permissão de localização.'
+  } finally {
+    geoLoading.value = false
+  }
+}
+
+function toInputDateString(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+const now = new Date()
+const exportDataInicial = ref(toInputDateString(new Date(now.getFullYear(), now.getMonth(), 1)))
+const exportDataFinal = ref(toInputDateString(now))
 
 const tipos = [
   { value: 'entrada', label: 'Entrada', icon: 'login' },
@@ -55,6 +104,13 @@ function tipoIcon(tipo: string) {
 function handleFileChange(e: Event) {
   const target = e.target as HTMLInputElement
   fotoFile.value = target.files?.[0] ?? null
+  if (fotoFile.value) {
+    void obterLocalizacao()
+  } else {
+    geoLat.value = null
+    geoLng.value = null
+    geoHint.value = null
+  }
 }
 
 async function registrarPonto() {
@@ -69,10 +125,13 @@ async function registrarPonto() {
     form.append('tipo', selectedTipo.value)
     form.append('data_hora', formatDataHoraLocal(new Date()))
 
-    if (navigator.geolocation) {
+    if (geoLat.value != null && geoLng.value != null) {
+      form.append('latitude', String(geoLat.value))
+      form.append('longitude', String(geoLng.value))
+    } else if (navigator.geolocation) {
       try {
         const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 }),
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 }),
         )
         form.append('latitude', String(pos.coords.latitude))
         form.append('longitude', String(pos.coords.longitude))
@@ -89,6 +148,10 @@ async function registrarPonto() {
     successMsg.value = 'Ponto registrado com sucesso!'
     showModal.value = false
     fotoFile.value = null
+    geoLat.value = null
+    geoLng.value = null
+    geoHint.value = null
+    if (fileInputRef.value) fileInputRef.value.value = ''
     await fetchPontos()
   } catch (err: any) {
     errorMsg.value = err.response?.data?.message ?? 'Erro ao registrar ponto'
@@ -111,10 +174,16 @@ async function fetchPontos() {
 
 async function exportarCsv() {
   if (!auth.empresaId || !auth.colaboradorId) return
-  const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  const dataInicial = start.toISOString().split('T')[0]!
-  const dataFinal = now.toISOString().split('T')[0]!
+  const dataInicial = exportDataInicial.value.trim()
+  const dataFinal = exportDataFinal.value.trim()
+  if (!dataInicial || !dataFinal) {
+    errorMsg.value = 'Informe a data inicial e a data final para exportar.'
+    return
+  }
+  if (dataInicial > dataFinal) {
+    errorMsg.value = 'A data inicial não pode ser posterior à data final.'
+    return
+  }
 
   try {
     const res = await pontoApi.exportCsv(
@@ -134,6 +203,17 @@ async function exportarCsv() {
   }
 }
 
+watch(showModal, (open) => {
+  if (!open) {
+    fotoFile.value = null
+    geoLat.value = null
+    geoLng.value = null
+    geoHint.value = null
+    geoLoading.value = false
+    if (fileInputRef.value) fileInputRef.value.value = ''
+  }
+})
+
 onMounted(fetchPontos)
 </script>
 
@@ -146,16 +226,40 @@ onMounted(fetchPontos)
           <p class="page-subtitle">Gerencie seus registros de entrada e saída</p>
         </div>
         <div class="header-actions">
-          <button class="btn-outline" @click="exportarCsv">
-            <span class="material-symbols-rounded">download</span>
-            <span class="btn-text">CSV</span>
-          </button>
           <button class="btn-primary" @click="showModal = true">
             <span class="material-symbols-rounded">add</span>
             <span class="btn-text">Registrar</span>
           </button>
         </div>
       </header>
+
+      <div class="export-toolbar">
+        <span class="export-toolbar-title">Exportar CSV</span>
+        <div class="export-toolbar-row">
+          <div class="export-field">
+            <label for="export-inicial">Data inicial</label>
+            <input
+              id="export-inicial"
+              v-model="exportDataInicial"
+              type="date"
+              :max="exportDataFinal"
+            />
+          </div>
+          <div class="export-field">
+            <label for="export-final">Data final</label>
+            <input
+              id="export-final"
+              v-model="exportDataFinal"
+              type="date"
+              :min="exportDataInicial"
+            />
+          </div>
+          <button type="button" class="btn-outline export-csv-btn" @click="exportarCsv">
+            <span class="material-symbols-rounded">download</span>
+            <span class="btn-text">Baixar CSV</span>
+          </button>
+        </div>
+      </div>
 
       <div v-if="successMsg" class="alert success">
         <span class="material-symbols-rounded">check_circle</span>
@@ -248,11 +352,11 @@ onMounted(fetchPontos)
 
                 <div class="field">
                   <label>Foto</label>
-                  <div class="file-upload" @click="($refs.fileInput as HTMLInputElement).click()">
+                  <div class="file-upload" @click="fileInputRef && fileInputRef.click()">
                     <span class="material-symbols-rounded">photo_camera</span>
                     <span>{{ fotoFile?.name ?? 'Tirar foto ou escolher arquivo' }}</span>
                     <input
-                      ref="fileInput"
+                      ref="fileInputRef"
                       type="file"
                       accept="image/*"
                       capture="environment"
@@ -260,6 +364,28 @@ onMounted(fetchPontos)
                       @change="handleFileChange"
                       required
                     />
+                  </div>
+                  <div v-if="fotoFile" class="geo-box">
+                    <template v-if="geoLoading">
+                      <span class="spinner geo-spinner" />
+                      <span class="geo-text">Obtendo localização…</span>
+                    </template>
+                    <template v-else-if="geoLat != null && geoLng != null">
+                      <span class="material-symbols-rounded geo-icon">location_on</span>
+                      <div class="geo-values">
+                        <span>Latitude <strong>{{ formatCoord(geoLat) }}</strong></span>
+                        <span>Longitude <strong>{{ formatCoord(geoLng) }}</strong></span>
+                      </div>
+                      <button type="button" class="geo-refresh" @click="obterLocalizacao">
+                        Atualizar
+                      </button>
+                    </template>
+                    <template v-else-if="geoHint">
+                      <p class="geo-hint-error">{{ geoHint }}</p>
+                      <button type="button" class="geo-refresh" @click="obterLocalizacao">
+                        Tentar novamente
+                      </button>
+                    </template>
                   </div>
                 </div>
 
@@ -305,6 +431,83 @@ onMounted(fetchPontos)
 .header-actions {
   display: flex;
   gap: 8px;
+}
+
+.export-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.export-toolbar-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.export-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.export-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.export-field label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.export-field input[type='date'] {
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 0.88rem;
+  color: var(--color-text);
+  min-width: 140px;
+}
+
+.export-field input[type='date']:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(26, 26, 46, 0.06);
+  background: var(--color-surface);
+}
+
+.export-csv-btn {
+  margin-left: auto;
+}
+
+@media (max-width: 520px) {
+  .export-toolbar-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .export-field input[type='date'] {
+    width: 100%;
+    min-width: unset;
+  }
+
+  .export-csv-btn {
+    margin-left: 0;
+    justify-content: center;
+  }
 }
 
 .btn-primary {
@@ -614,6 +817,73 @@ onMounted(fetchPontos)
 
 .file-upload .material-symbols-rounded {
   font-size: 22px;
+}
+
+.geo-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: var(--color-tint-brand-bg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-light);
+}
+
+.geo-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+}
+
+.geo-text {
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.geo-icon {
+  font-size: 22px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.geo-values {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  flex: 1;
+  min-width: 0;
+}
+
+.geo-values strong {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.geo-refresh {
+  margin-left: auto;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.geo-refresh:hover {
+  background: var(--color-bg);
+}
+
+.geo-hint-error {
+  font-size: 0.8rem;
+  color: var(--color-danger);
+  margin: 0;
+  flex: 1 1 100%;
 }
 
 .btn-full {

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { Empresa, Colaborador, Ponto, Atestado } from '@/types'
+import type { Empresa, Colaborador, Ponto, Atestado, User } from '@/types'
 
 const api = axios.create({
   baseURL: '/api',
@@ -85,6 +85,18 @@ export const pontoApi = {
     return api.get(`/ponto/planilha/${idEmpresa}/${idColaborador}/${dataInicial}/${dataFinal}`, {
       responseType: 'blob',
     })
+  },
+}
+
+export const userApi = {
+  create(
+    idEmpresa: number,
+    data: { email: string; password: string; name: string; role: string },
+  ) {
+    return api.post<{ message: string; user: User }>(
+      `/user/${idEmpresa}`,
+      data,
+    )
   },
 }
 

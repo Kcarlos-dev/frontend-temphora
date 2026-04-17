@@ -21,6 +21,7 @@ const navItems = computed<NavItem[]>(() => {
     { name: 'Colaboradores', icon: 'group', to: '/colaboradores', roles: ['admin', 'root', 'rh'] },
     { name: 'Atestados', icon: 'description', to: '/atestados' },
     { name: 'Empresa', icon: 'business', to: '/empresa', roles: ['admin', 'root', 'rh'] },
+    { name: 'Usuários', icon: 'manage_accounts', to: '/usuarios', roles: ['root'] },
   ]
   return items.filter(
     (item) => !item.roles || item.roles.includes(auth.userRole),
