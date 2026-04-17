@@ -41,7 +41,8 @@ function resolveEmpresaIdAlvo(): number {
   if (empresaReadonly.value && auth.empresaId != null) {
     return auth.empresaId
   }
-  const n = parseInt(form.value.id_empresa.trim(), 10)
+  // input type="number" pode deixar id_empresa como number — não usar .trim() direto
+  const n = parseInt(String(form.value.id_empresa ?? '').trim(), 10)
   return !Number.isNaN(n) && n > 0 ? n : 0
 }
 
