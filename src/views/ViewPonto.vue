@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { pontoApi } from '@/services/api'
-import type { Ponto } from '@/types'
-import { formatDataHoraLocal } from '@/utils/datetime'
+import { pontoApi, colaboradorApi } from '@/services/api'
+import type { Ponto, Colaborador } from '@/types'
+import { formatDataHoraLocal, parseDataHora } from '@/utils/datetime'
+import { onlyDigits } from '@/utils/inputFormat'
 import { compressImageFileIfNeeded } from '@/utils/compressImage'
 import AppLayout from '@/components/layout/AppLayout.vue'
 
@@ -22,11 +23,9 @@ const geoHint = ref<string | null>(null)
 const successMsg = ref('')
 const errorMsg = ref('')
 
-// Paginação: usada no modo gestor (admin/rh/root) para navegar nos pontos da empresa.
+// Paginação client-side (lista completa dividida em páginas locais).
 const page = ref(1)
 const pageSize = ref(20)
-const totalPages = ref(1)
-const total = ref(0)
 
 const isManagerView = computed(() =>
   ['admin', 'rh', 'root'].includes(auth.userRole),
@@ -37,6 +36,32 @@ const canExportCsv = computed(() =>
 const canRegistrarPonto = computed(
   () => auth.colaboradorId != null && auth.empresaId != null,
 )
+
+// Busca manual de colaborador (CPF ou ID) — modo gestor.
+type SearchMode = 'cpf' | 'id'
+const searchMode = ref<SearchMode>('cpf')
+const searchInput = ref('')
+const searching = ref(false)
+const selectedColaborador = ref<Colaborador | null>(null)
+const selectedColaboradorId = ref<number | null>(null)
+
+const pontosOrdenados = computed(() =>
+  [...pontos.value].sort((a, b) => {
+    return parseDataHora(b.data_hora).getTime() - parseDataHora(a.data_hora).getTime()
+  }),
+)
+const totalRegistros = computed(() => pontosOrdenados.value.length)
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(totalRegistros.value / pageSize.value)),
+)
+const pontosPagina = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return pontosOrdenados.value.slice(start, start + pageSize.value)
+})
+
+function formatMapsUrl(lat: number, lng: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+}
 
 function formatCoord(n: number): string {
   return n.toFixed(6)
@@ -91,8 +116,8 @@ const tipos = [
 
 const groupedByDate = computed(() => {
   const groups: Record<string, Ponto[]> = {}
-  for (const p of pontos.value) {
-    const date = new Date(p.data_hora).toLocaleDateString('pt-BR')
+  for (const p of pontosPagina.value) {
+    const date = parseDataHora(p.data_hora).toLocaleDateString('pt-BR')
     if (!groups[date]) groups[date] = []
     groups[date].push(p)
   }
@@ -104,7 +129,7 @@ const groupedByDate = computed(() => {
 })
 
 function formatTime(dateStr: string) {
-  return new Date(dateStr).toLocaleTimeString('pt-BR', {
+  return parseDataHora(dateStr).toLocaleTimeString('pt-BR', {
     hour: '2-digit',
     minute: '2-digit',
   })
@@ -170,7 +195,13 @@ async function registrarPonto() {
     geoLng.value = null
     geoHint.value = null
     if (fileInputRef.value) fileInputRef.value.value = ''
-    await fetchPontos()
+    // Se um gestor está vendo um colaborador específico, refaz a busca desse colaborador;
+    // senão, recarrega os pontos pessoais (colaborador comum).
+    if (isManagerView.value && selectedColaboradorId.value) {
+      await fetchPontosColaborador(selectedColaboradorId.value)
+    } else {
+      await fetchPontos()
+    }
   } catch (err: any) {
     const status = err.response?.status
     const apiMsg = err.response?.data?.message
@@ -201,41 +232,117 @@ async function fetchPontosPessoais() {
   }
 }
 
-async function fetchPontosEmpresa() {
-  if (!auth.empresaId) {
-    loading.value = false
-    return
-  }
+async function fetchPontosColaborador(idColaborador: number) {
+  if (!auth.empresaId) return
   loading.value = true
   try {
-    const res = await pontoApi.listByEmpresa(
-      auth.empresaId,
-      page.value,
-      pageSize.value,
-    )
-    pontos.value = res.data.data
-    total.value = res.data.total
-    totalPages.value = res.data.totalPages
-    page.value = res.data.page
-  } catch {
-    errorMsg.value = 'Erro ao carregar pontos da empresa'
+    const res = await pontoApi.list(auth.empresaId, idColaborador)
+    pontos.value = Array.isArray(res.data) ? res.data : []
+    page.value = 1
+  } catch (err: any) {
+    const status = err.response?.status
+    if (status === 404) {
+      pontos.value = []
+    } else {
+      errorMsg.value =
+        err.response?.data?.message ?? 'Erro ao carregar pontos do colaborador'
+    }
   } finally {
     loading.value = false
   }
 }
 
-async function fetchPontos() {
-  if (isManagerView.value) {
-    await fetchPontosEmpresa()
-  } else {
-    await fetchPontosPessoais()
+async function buscarColaborador() {
+  if (!auth.empresaId) return
+  const raw = searchInput.value.trim()
+  if (!raw) {
+    errorMsg.value =
+      searchMode.value === 'cpf'
+        ? 'Informe o CPF do colaborador para buscar.'
+        : 'Informe o ID do colaborador para buscar.'
+    return
+  }
+  errorMsg.value = ''
+  successMsg.value = ''
+  searching.value = true
+
+  try {
+    let colab: Colaborador | null = null
+    let idColab: number | null = null
+
+    if (searchMode.value === 'cpf') {
+      const cpf = onlyDigits(raw)
+      if (cpf.length !== 11) {
+        errorMsg.value = 'CPF deve conter 11 dígitos.'
+        return
+      }
+      const res = await colaboradorApi.getByCpf(auth.empresaId, cpf)
+      colab = res.data
+      idColab = res.data?.id ?? null
+    } else {
+      const parsed = parseInt(raw, 10)
+      if (!parsed || Number.isNaN(parsed) || parsed <= 0) {
+        errorMsg.value = 'ID do colaborador inválido.'
+        return
+      }
+      idColab = parsed
+      // Tenta enriquecer com dados da lista (opcional — a rota direta por id não existe).
+      try {
+        const lista = await colaboradorApi.list(auth.empresaId)
+        colab = lista.data.find((c) => c.id === parsed) ?? null
+      } catch {
+        colab = null
+      }
+    }
+
+    if (!idColab) {
+      errorMsg.value = 'Colaborador não encontrado.'
+      pontos.value = []
+      selectedColaborador.value = null
+      selectedColaboradorId.value = null
+      return
+    }
+
+    selectedColaborador.value = colab
+    selectedColaboradorId.value = idColab
+    await fetchPontosColaborador(idColab)
+  } catch (err: any) {
+    const status = err.response?.status
+    if (status === 404) {
+      errorMsg.value = 'Colaborador não encontrado para essa empresa.'
+    } else {
+      errorMsg.value =
+        err.response?.data?.message ?? 'Erro ao buscar colaborador.'
+    }
+    pontos.value = []
+    selectedColaborador.value = null
+    selectedColaboradorId.value = null
+  } finally {
+    searching.value = false
   }
 }
 
-async function goToPage(next: number) {
+function limparBusca() {
+  searchInput.value = ''
+  selectedColaborador.value = null
+  selectedColaboradorId.value = null
+  pontos.value = []
+  page.value = 1
+  errorMsg.value = ''
+}
+
+async function fetchPontos() {
+  if (isManagerView.value) {
+    // Gestor não tem lista automática — aguarda a busca manual.
+    loading.value = false
+    return
+  }
+  await fetchPontosPessoais()
+}
+
+function goToPage(next: number) {
   if (next < 1 || next > totalPages.value || next === page.value) return
   page.value = next
-  await fetchPontosEmpresa()
 }
 
 async function exportarCsv() {
@@ -303,14 +410,74 @@ onMounted(fetchPontos)
         </div>
       </header>
 
-      <div v-if="isManagerView" class="empresa-banner">
-        <span class="material-symbols-rounded">groups</span>
-        <span>
-          Exibindo pontos de todos os colaboradores da empresa
-          <template v-if="total > 0">
-            — <strong>{{ total }}</strong> registro(s)
-          </template>
-        </span>
+      <div v-if="isManagerView" class="search-toolbar">
+        <span class="search-toolbar-title">Buscar pontos de um colaborador</span>
+        <div class="search-mode">
+          <label
+            class="search-mode-option"
+            :class="{ active: searchMode === 'cpf' }"
+          >
+            <input v-model="searchMode" type="radio" value="cpf" />
+            <span>CPF</span>
+          </label>
+          <label
+            class="search-mode-option"
+            :class="{ active: searchMode === 'id' }"
+          >
+            <input v-model="searchMode" type="radio" value="id" />
+            <span>ID</span>
+          </label>
+        </div>
+        <form class="search-row" @submit.prevent="buscarColaborador">
+          <input
+            v-model="searchInput"
+            :type="searchMode === 'id' ? 'number' : 'text'"
+            :inputmode="searchMode === 'id' ? 'numeric' : 'numeric'"
+            :placeholder="
+              searchMode === 'cpf'
+                ? '000.000.000-00 ou só os dígitos'
+                : 'ID do colaborador'
+            "
+            class="search-input"
+            autocomplete="off"
+          />
+          <button
+            type="submit"
+            class="btn-primary search-submit"
+            :disabled="searching"
+          >
+            <span v-if="searching" class="spinner" />
+            <template v-else>
+              <span class="material-symbols-rounded">search</span>
+              <span class="btn-text">Buscar</span>
+            </template>
+          </button>
+          <button
+            v-if="selectedColaboradorId"
+            type="button"
+            class="btn-outline search-clear"
+            @click="limparBusca"
+          >
+            <span class="material-symbols-rounded">close</span>
+            <span class="btn-text">Limpar</span>
+          </button>
+        </form>
+
+        <div v-if="selectedColaboradorId" class="search-result-info">
+          <span class="material-symbols-rounded">badge</span>
+          <div class="search-result-text">
+            <strong>
+              {{ selectedColaborador?.full_name ?? `Colaborador #${selectedColaboradorId}` }}
+            </strong>
+            <span class="search-result-meta">
+              ID {{ selectedColaboradorId }}
+              <template v-if="selectedColaborador?.cpf">
+                · CPF {{ selectedColaborador.cpf }}
+              </template>
+              · {{ totalRegistros }} registro(s)
+            </span>
+          </div>
+        </div>
       </div>
 
       <div v-if="canExportCsv" class="export-toolbar">
@@ -362,7 +529,14 @@ onMounted(fetchPontos)
       </div>
 
       <template v-else>
-        <div v-if="pontos.length === 0" class="empty-state">
+        <div v-if="isManagerView && !selectedColaboradorId" class="empty-state">
+          <span class="material-symbols-rounded empty-icon">person_search</span>
+          <p>Informe o CPF ou o ID do colaborador para ver os pontos registrados.</p>
+        </div>
+        <div
+          v-else-if="pontos.length === 0"
+          class="empty-state"
+        >
           <span class="material-symbols-rounded empty-icon">schedule</span>
           <p>Nenhum registro de ponto encontrado</p>
         </div>
@@ -393,10 +567,26 @@ onMounted(fetchPontos)
                     {{ ponto.colaborador_nome }}
                   </span>
                   <span class="ponto-tipo">{{ tipoLabel(ponto.tipo) }}</span>
-                  <span v-if="ponto.latitude" class="ponto-location">
-                    <span class="material-symbols-rounded" style="font-size: 12px;">location_on</span>
-                    Geolocalizado
-                  </span>
+                  <div
+                    v-if="ponto.latitude != null && ponto.longitude != null"
+                    class="ponto-geo"
+                  >
+                    <span class="material-symbols-rounded ponto-geo-icon">location_on</span>
+                    <span class="ponto-geo-values">
+                      {{ formatCoord(Number(ponto.latitude)) }},
+                      {{ formatCoord(Number(ponto.longitude)) }}
+                    </span>
+                    <a
+                      class="ponto-geo-link"
+                      :href="formatMapsUrl(Number(ponto.latitude), Number(ponto.longitude))"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Abrir no Google Maps"
+                    >
+                      <span class="material-symbols-rounded">map</span>
+                      <span>Abrir no mapa</span>
+                    </a>
+                  </div>
                 </div>
                 <span class="ponto-time">{{ formatTime(ponto.data_hora) }}</span>
               </div>
@@ -405,7 +595,7 @@ onMounted(fetchPontos)
         </div>
 
         <nav
-          v-if="isManagerView && totalPages > 1"
+          v-if="totalPages > 1"
           class="pagination"
           aria-label="Paginação de pontos"
         >
@@ -547,28 +737,163 @@ onMounted(fetchPontos)
   gap: 8px;
 }
 
-.empresa-banner {
+.search-toolbar {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  margin-bottom: 12px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  font-size: 0.85rem;
+  border-radius: var(--radius-lg);
+}
+
+.search-toolbar-title {
+  font-size: 0.82rem;
+  font-weight: 700;
   color: var(--color-text-secondary);
 }
 
-.empresa-banner .material-symbols-rounded {
-  font-size: 18px;
+.search-mode {
+  display: flex;
+  gap: 8px;
+}
+
+.search-mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  background: var(--color-bg);
+  transition: all 0.15s;
+}
+
+.search-mode-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.search-mode-option.active {
   color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: rgba(26, 26, 46, 0.06);
+}
+
+.search-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(26, 26, 46, 0.06);
+  background: var(--color-surface);
+}
+
+.search-submit,
+.search-clear {
+  flex: 0 0 auto;
+}
+
+.search-result-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-border);
+}
+
+.search-result-info .material-symbols-rounded {
+  font-size: 22px;
+  color: var(--color-primary);
+}
+
+.search-result-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
+.search-result-meta {
+  font-size: 0.78rem;
+  color: var(--color-text-secondary);
 }
 
 .ponto-colab {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--color-text);
+}
+
+.ponto-geo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--color-bg);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ponto-geo-icon {
+  font-size: 14px !important;
+  color: var(--color-primary);
+}
+
+.ponto-geo-values {
+  letter-spacing: 0.02em;
+}
+
+.ponto-geo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.72rem;
+  font-family: var(--font-sans, inherit);
+  background: var(--color-primary);
+  color: #fff;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.ponto-geo-link:hover {
+  opacity: 0.9;
+}
+
+.ponto-geo-link .material-symbols-rounded {
+  font-size: 14px !important;
+  color: #fff;
 }
 
 .pagination {
