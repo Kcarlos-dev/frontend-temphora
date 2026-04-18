@@ -106,6 +106,24 @@ function toInputDateString(d: Date): string {
 const now = new Date()
 const exportDataInicial = ref(toInputDateString(new Date(now.getFullYear(), now.getMonth(), 1)))
 const exportDataFinal = ref(toInputDateString(now))
+const showExportConfirm = ref(false)
+const exporting = ref(false)
+
+const exportTargetColaboradorId = computed<number | null>(() =>
+  isManagerView.value ? selectedColaboradorId.value : auth.colaboradorId,
+)
+
+const exportTargetNome = computed(() => {
+  if (isManagerView.value) {
+    return (
+      selectedColaborador.value?.full_name ??
+      (selectedColaboradorId.value
+        ? `Colaborador #${selectedColaboradorId.value}`
+        : '')
+    )
+  }
+  return 'seus registros'
+})
 
 const tipos = [
   { value: 'entrada', label: 'Entrada', icon: 'login' },
@@ -345,8 +363,8 @@ function goToPage(next: number) {
   page.value = next
 }
 
-async function exportarCsv() {
-  if (!auth.empresaId || !auth.colaboradorId) return
+function abrirConfirmacaoExport() {
+  if (!auth.empresaId) return
   const dataInicial = exportDataInicial.value.trim()
   const dataFinal = exportDataFinal.value.trim()
   if (!dataInicial || !dataFinal) {
@@ -357,22 +375,52 @@ async function exportarCsv() {
     errorMsg.value = 'A data inicial não pode ser posterior à data final.'
     return
   }
+  if (!exportTargetColaboradorId.value) {
+    errorMsg.value = isManagerView.value
+      ? 'Busque um colaborador antes de exportar a planilha.'
+      : 'Colaborador não identificado.'
+    return
+  }
+  errorMsg.value = ''
+  showExportConfirm.value = true
+}
 
+async function exportarCsv() {
+  if (!auth.empresaId) return
+  const idColab = exportTargetColaboradorId.value
+  if (!idColab) return
+  const dataInicial = exportDataInicial.value.trim()
+  const dataFinal = exportDataFinal.value.trim()
+
+  exporting.value = true
   try {
     const res = await pontoApi.exportCsv(
       auth.empresaId,
-      auth.colaboradorId,
+      idColab,
       dataInicial,
       dataFinal,
     )
-    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' })
+    const fileName = `ponto_${dataInicial}_${dataFinal}.csv`
+
+    // Navegadores mobile (especialmente iOS Safari) exigem que o <a>
+    // esteja anexado ao DOM para o clique programático baixar o arquivo.
+    const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `ponto_${dataInicial}_${dataFinal}.csv`
+    a.download = fileName
+    a.rel = 'noopener'
+    a.style.display = 'none'
+    document.body.appendChild(a)
     a.click()
-    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+    setTimeout(() => window.URL.revokeObjectURL(url), 1000)
+
+    showExportConfirm.value = false
   } catch {
     errorMsg.value = 'Erro ao exportar planilha'
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -501,7 +549,7 @@ onMounted(fetchPontos)
               :min="exportDataInicial"
             />
           </div>
-          <button type="button" class="btn-outline export-csv-btn" @click="exportarCsv">
+          <button type="button" class="btn-outline export-csv-btn" @click="abrirConfirmacaoExport">
             <span class="material-symbols-rounded">download</span>
             <span class="btn-text">Baixar CSV</span>
           </button>
@@ -622,6 +670,62 @@ onMounted(fetchPontos)
           </button>
         </nav>
       </template>
+
+      <!-- Modal Confirmar Exportação CSV -->
+      <Teleport to="body">
+        <Transition name="fade">
+          <div
+            v-if="showExportConfirm"
+            class="modal-overlay"
+            @click.self="!exporting && (showExportConfirm = false)"
+          >
+            <div class="modal confirm-modal">
+              <div class="modal-header">
+                <h3>Confirmar download</h3>
+                <button
+                  class="modal-close"
+                  :disabled="exporting"
+                  @click="showExportConfirm = false"
+                >
+                  <span class="material-symbols-rounded">close</span>
+                </button>
+              </div>
+              <div class="modal-body">
+                <p class="confirm-text">
+                  Deseja baixar a planilha CSV de
+                  <strong>{{ exportTargetNome }}</strong>
+                  no período
+                  <strong>{{ exportDataInicial }}</strong>
+                  até
+                  <strong>{{ exportDataFinal }}</strong>?
+                </p>
+                <div class="confirm-actions">
+                  <button
+                    type="button"
+                    class="btn-outline"
+                    :disabled="exporting"
+                    @click="showExportConfirm = false"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-primary"
+                    :disabled="exporting"
+                    @click="exportarCsv"
+                  >
+                    <span v-if="exporting" class="spinner" />
+                    <template v-else>
+                      <span class="material-symbols-rounded">download</span>
+                      <span>Baixar</span>
+                    </template>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Transition>
+      </Teleport>
 
       <!-- Modal Registrar -->
       <Teleport to="body">
@@ -1372,6 +1476,40 @@ onMounted(fetchPontos)
   width: 100%;
   justify-content: center;
   padding: 13px;
+}
+
+.confirm-modal .confirm-text {
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.confirm-modal .confirm-text strong {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-actions .btn-primary,
+.confirm-actions .btn-outline {
+  min-width: 110px;
+  justify-content: center;
+}
+
+@media (max-width: 480px) {
+  .confirm-actions {
+    flex-direction: column-reverse;
+  }
+
+  .confirm-actions .btn-primary,
+  .confirm-actions .btn-outline {
+    width: 100%;
+  }
 }
 
 @media (min-width: 769px) {
