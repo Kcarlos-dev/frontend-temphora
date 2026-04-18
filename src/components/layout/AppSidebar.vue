@@ -7,6 +7,8 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
+const emit = defineEmits<{ (e: 'open-change-password'): void }>()
+
 interface NavItem {
   name: string
   icon: string
@@ -60,7 +62,12 @@ function handleLogout() {
     </nav>
 
     <div class="sidebar-footer">
-      <div class="user-info">
+      <button
+        type="button"
+        class="user-info"
+        title="Alterar senha"
+        @click="emit('open-change-password')"
+      >
         <div class="user-avatar">
           <span class="material-symbols-rounded">person</span>
         </div>
@@ -68,8 +75,9 @@ function handleLogout() {
           <span class="user-email">{{ auth.userName }}</span>
           <span class="user-role">{{ auth.userRole }}</span>
         </div>
-      </div>
-      <button class="logout-btn" @click="handleLogout">
+        <span class="material-symbols-rounded user-edit-icon">key</span>
+      </button>
+      <button class="logout-btn" title="Sair" @click="handleLogout">
         <span class="material-symbols-rounded">logout</span>
       </button>
     </div>
@@ -164,6 +172,30 @@ function handleLogout() {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  padding: 6px 8px;
+  margin: -6px -8px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.user-info:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.user-info:hover .user-edit-icon {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.user-edit-icon {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
+  transition: color 0.15s ease;
 }
 
 .user-avatar {

@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import AppSidebar from './AppSidebar.vue'
 import AppBottomNav from './AppBottomNav.vue'
+import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
+const showChangePassword = ref(false)
 
 function handleLogout() {
   auth.logout()
@@ -15,13 +18,19 @@ function handleLogout() {
 
 <template>
   <div class="app-layout">
-    <AppSidebar />
+    <AppSidebar @open-change-password="showChangePassword = true" />
     <div class="content-column">
       <header class="mobile-topbar">
-        <div class="mobile-user">
+        <button
+          type="button"
+          class="mobile-user"
+          title="Alterar senha"
+          @click="showChangePassword = true"
+        >
           <span class="material-symbols-rounded mobile-user-icon">person</span>
           <span class="mobile-user-email">{{ auth.userName }}</span>
-        </div>
+          <span class="material-symbols-rounded mobile-user-edit">key</span>
+        </button>
         <button type="button" class="mobile-logout" @click="handleLogout">
           <span class="material-symbols-rounded">logout</span>
           <span>Sair</span>
@@ -32,6 +41,7 @@ function handleLogout() {
       </main>
     </div>
     <AppBottomNav />
+    <ChangePasswordModal v-model="showChangePassword" />
   </div>
 </template>
 
@@ -82,6 +92,27 @@ function handleLogout() {
     align-items: center;
     gap: 8px;
     min-width: 0;
+    flex: 1;
+    padding: 6px 8px;
+    margin: -6px -8px;
+    border-radius: var(--radius-md);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+    color: inherit;
+    transition: background 0.15s ease;
+  }
+
+  .mobile-user:hover {
+    background: var(--color-border-light);
+  }
+
+  .mobile-user-edit {
+    font-size: 16px;
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+    margin-left: auto;
   }
 
   .mobile-user-icon {

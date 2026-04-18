@@ -109,6 +109,12 @@ export const userApi = {
       data,
     )
   },
+  updatePassword(
+    idEmpresa: number,
+    data: { email: string; password: string },
+  ) {
+    return api.put<{ message: string }>(`/user/${idEmpresa}`, data)
+  },
 }
 
 export const atestadoApi = {
