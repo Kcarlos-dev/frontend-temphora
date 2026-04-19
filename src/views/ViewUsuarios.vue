@@ -1,24 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useRecentUsersStore } from '@/stores/recentUsers'
 import { userApi } from '@/services/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { normalizeEmail } from '@/utils/inputFormat'
-import type { User } from '@/types'
 
 const auth = useAuthStore()
+const recent = useRecentUsersStore()
 
 const isRoot = computed(() => auth.userRole === 'root')
 
 const saving = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
-
-// Últimos 5 usuários criados nesta sessão. Fica só em memória: some ao
-// recarregar a página ou trocar de rota. Serve de "cola" para o admin
-// lembrar o id_user ao associar um colaborador logo em seguida.
-const MAX_RECENT = 5
-const recentUsers = ref<Array<User & { id_empresa: number }>>([])
 
 function initialForm() {
   return {
@@ -59,10 +54,7 @@ async function handleSubmit() {
     })
 
     const created = res.data.user
-    recentUsers.value = [
-      { ...created, id_empresa: idEmpresa },
-      ...recentUsers.value,
-    ].slice(0, MAX_RECENT)
+    recent.add(created, idEmpresa)
 
     successMsg.value = `Usuário criado (id ${created.id}). Use esse ID ao associar ao colaborador.`
 
@@ -199,16 +191,28 @@ async function copyId(id: number) {
         </div>
       </form>
 
-      <section v-if="recentUsers.length" class="recent-card">
+      <section v-if="recent.items.length" class="recent-card">
         <header class="recent-header">
-          <h2>Criados nesta sessão</h2>
-          <p class="recent-subtitle">
-            Os {{ MAX_RECENT }} últimos usuários criados aqui. A lista some ao
-            recarregar a página.
-          </p>
+          <div>
+            <h2>Últimos criados</h2>
+            <p class="recent-subtitle">
+              Os {{ recent.max }} últimos usuários criados por você nesta
+              sessão. Também aparecem na tela de colaboradores para facilitar
+              a associação. A lista é descartada ao fechar a aba.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="recent-clear"
+            title="Limpar lista"
+            @click="recent.clear()"
+          >
+            <span class="material-symbols-rounded">delete_sweep</span>
+            <span>Limpar</span>
+          </button>
         </header>
         <ul class="recent-list">
-          <li v-for="u in recentUsers" :key="u.id" class="recent-item">
+          <li v-for="u in recent.items" :key="u.id" class="recent-item">
             <div class="recent-main">
               <div class="recent-name">{{ u.name }}</div>
               <div class="recent-email">{{ u.email }}</div>
@@ -405,10 +409,43 @@ async function copyId(id: number) {
   padding: 20px 20px 10px;
 }
 
+.recent-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .recent-header h2 {
   font-size: 1rem;
   font-weight: 700;
   color: var(--color-text);
+}
+
+.recent-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.recent-clear:hover {
+  color: #dc2626;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.recent-clear .material-symbols-rounded {
+  font-size: 16px;
 }
 
 .recent-subtitle {

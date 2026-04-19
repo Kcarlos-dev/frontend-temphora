@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useRecentUsersStore } from '@/stores/recentUsers'
 import { colaboradorApi } from '@/services/api'
 import type { Colaborador } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { maskCpf, maskPhoneBr, onlyDigits } from '@/utils/inputFormat'
 
 const auth = useAuthStore()
+const recent = useRecentUsersStore()
 const colaboradores = ref<Colaborador[]>([])
 const loading = ref(true)
 const search = ref('')
@@ -44,6 +46,22 @@ function resolveEmpresaIdAlvo(): number {
   // input type="number" pode deixar id_empresa como number — não usar .trim() direto
   const n = parseInt(String(form.value.id_empresa ?? '').trim(), 10)
   return !Number.isNaN(n) && n > 0 ? n : 0
+}
+
+/**
+ * Usuários recém-criados (persistidos em localStorage pelo store) que fazem
+ * sentido para a empresa atualmente escolhida no form. Root pode ver todos
+ * enquanto o campo de empresa estiver vazio — assim que ele preenche um ID,
+ * filtramos para esse ID.
+ */
+const recentUsersForForm = computed(() => {
+  const empresaAlvo = resolveEmpresaIdAlvo()
+  if (!empresaAlvo) return recent.items
+  return recent.items.filter((u) => u.id_empresa === empresaAlvo)
+})
+
+function pickRecentUser(id: number) {
+  form.value.id_user = String(id)
 }
 
 const filtered = computed(() => {
@@ -326,6 +344,38 @@ onMounted(async () => {
                   <p class="field-hint">
                     Colaborador fica vinculado a um usuário já existente (campo obrigatório na API).
                   </p>
+
+                  <div v-if="recentUsersForForm.length" class="recent-suggest">
+                    <div class="recent-suggest-header">
+                      <span class="material-symbols-rounded">history</span>
+                      <span>Criados recentemente</span>
+                    </div>
+                    <ul class="recent-suggest-list">
+                      <li
+                        v-for="u in recentUsersForForm"
+                        :key="u.id"
+                        class="recent-suggest-item"
+                        :class="{ active: String(u.id) === String(form.id_user) }"
+                      >
+                        <button
+                          type="button"
+                          class="recent-suggest-btn"
+                          :title="'Usar ID ' + u.id"
+                          @click="pickRecentUser(u.id)"
+                        >
+                          <span class="recent-suggest-id">#{{ u.id }}</span>
+                          <span class="recent-suggest-info">
+                            <span class="recent-suggest-name">{{ u.name }}</span>
+                            <span class="recent-suggest-email">{{ u.email }}</span>
+                          </span>
+                          <span
+                            class="recent-suggest-role"
+                            :data-role="u.role"
+                          >{{ u.role }}</span>
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
                 </div>
 
                 <div class="field">
@@ -754,5 +804,125 @@ onMounted(async () => {
 @media (max-width: 480px) {
   .btn-text { display: none; }
   .field-row { grid-template-columns: 1fr; }
+}
+
+.recent-suggest {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--color-border);
+  background: var(--color-bg);
+}
+
+.recent-suggest-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+.recent-suggest-header .material-symbols-rounded {
+  font-size: 16px;
+}
+
+.recent-suggest-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recent-suggest-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.recent-suggest-btn:hover {
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+  transform: translateY(-1px);
+}
+
+.recent-suggest-item.active .recent-suggest-btn {
+  border-color: var(--color-primary);
+  background: #eef2ff;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.12);
+}
+
+.recent-suggest-id {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--color-primary);
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  flex-shrink: 0;
+}
+
+.recent-suggest-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.recent-suggest-name {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-suggest-email {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recent-suggest-role {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--color-border-light);
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.recent-suggest-role[data-role='admin'] {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.recent-suggest-role[data-role='rh'] {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.recent-suggest-role[data-role='colaborador'] {
+  background: #dcfce7;
+  color: #166534;
 }
 </style>
