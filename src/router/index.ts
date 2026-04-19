@@ -41,7 +41,7 @@ const router = createRouter({
       path: '/usuarios',
       name: 'usuarios',
       component: () => import('@/views/ViewUsuarios.vue'),
-      meta: { roles: ['root'] },
+      meta: { roles: ['admin', 'root', 'rh'] },
     },
     {
       path: '/nova-empresa',
@@ -78,6 +78,45 @@ router.beforeEach((to) => {
   }
 
   return true
+})
+
+// Quando houve deploy com o app aberto, os chunks (lazy views) mudam de hash
+// e `import()` do route-level dispara "Failed to fetch dynamically imported
+// module" (404). Nesse caso, forçamos um reload uma única vez para que o
+// navegador baixe o index.html novo e seus assets. O flag em sessionStorage
+// evita loop quando o problema não for de deploy.
+const CHUNK_RELOAD_FLAG = 'temphora_chunk_reload'
+
+function isDynamicImportError(err: unknown): boolean {
+  if (!err) return false
+  const msg =
+    err instanceof Error ? err.message : typeof err === 'string' ? err : ''
+  return (
+    /Failed to fetch dynamically imported module/i.test(msg) ||
+    /Importing a module script failed/i.test(msg) ||
+    /Loading chunk \S+ failed/i.test(msg) ||
+    /error loading dynamically imported module/i.test(msg)
+  )
+}
+
+router.onError((error, to) => {
+  if (!isDynamicImportError(error)) return
+
+  const alreadyReloaded = sessionStorage.getItem(CHUNK_RELOAD_FLAG) === '1'
+  if (alreadyReloaded) {
+    sessionStorage.removeItem(CHUNK_RELOAD_FLAG)
+    return
+  }
+
+  sessionStorage.setItem(CHUNK_RELOAD_FLAG, '1')
+  const target = to?.fullPath || window.location.pathname
+  window.location.replace(target)
+})
+
+router.afterEach(() => {
+  if (sessionStorage.getItem(CHUNK_RELOAD_FLAG) === '1') {
+    sessionStorage.removeItem(CHUNK_RELOAD_FLAG)
+  }
 })
 
 export default router
