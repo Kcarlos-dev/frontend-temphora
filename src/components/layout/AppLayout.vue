@@ -5,10 +5,12 @@ import { useAuthStore } from '@/stores/auth'
 import AppSidebar from './AppSidebar.vue'
 import AppBottomNav from './AppBottomNav.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
+import ProfileModal from '@/components/ProfileModal.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
 const showChangePassword = ref(false)
+const showProfile = ref(false)
 
 function handleLogout() {
   auth.logout()
@@ -18,18 +20,28 @@ function handleLogout() {
 
 <template>
   <div class="app-layout">
-    <AppSidebar @open-change-password="showChangePassword = true" />
+    <AppSidebar
+      @open-profile="showProfile = true"
+      @open-change-password="showChangePassword = true"
+    />
     <div class="content-column">
       <header class="mobile-topbar">
         <button
           type="button"
           class="mobile-user"
-          title="Alterar senha"
-          @click="showChangePassword = true"
+          title="Abrir perfil"
+          @click="showProfile = true"
         >
           <span class="material-symbols-rounded mobile-user-icon">person</span>
           <span class="mobile-user-email">{{ auth.userName }}</span>
-          <span class="material-symbols-rounded mobile-user-edit">key</span>
+        </button>
+        <button
+          type="button"
+          class="mobile-key"
+          title="Alterar senha"
+          @click="showChangePassword = true"
+        >
+          <span class="material-symbols-rounded">key</span>
         </button>
         <button type="button" class="mobile-logout" @click="handleLogout">
           <span class="material-symbols-rounded">logout</span>
@@ -42,6 +54,10 @@ function handleLogout() {
     </div>
     <AppBottomNav />
     <ChangePasswordModal v-model="showChangePassword" />
+    <ProfileModal
+      v-model="showProfile"
+      @open-change-password="showChangePassword = true"
+    />
   </div>
 </template>
 
@@ -108,11 +124,28 @@ function handleLogout() {
     background: var(--color-border-light);
   }
 
-  .mobile-user-edit {
-    font-size: 16px;
-    color: var(--color-text-muted);
+  .mobile-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
-    margin-left: auto;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    background: var(--color-border-light);
+    color: var(--color-text-secondary);
+    transition: background 0.15s ease, color 0.15s ease;
+    border: 0;
+    cursor: pointer;
+  }
+
+  .mobile-key:hover {
+    background: var(--color-border);
+    color: var(--color-text);
+  }
+
+  .mobile-key .material-symbols-rounded {
+    font-size: 18px;
   }
 
   .mobile-user-icon {

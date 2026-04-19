@@ -1,5 +1,13 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios'
-import type { Empresa, Colaborador, Ponto, PontoEmpresaPage, Atestado, User } from '@/types'
+import type {
+  Empresa,
+  Colaborador,
+  Ponto,
+  PontoEmpresaPage,
+  Atestado,
+  User,
+  UserProfile,
+} from '@/types'
 
 const api = axios.create({
   baseURL: '/api',
@@ -72,6 +80,12 @@ export const colaboradorApi = {
   updateStatus(idEmpresa: number, id: number, status: string) {
     return api.patch<Colaborador>(`/colaborador/${idEmpresa}/${id}/status`, { status })
   },
+  uploadFoto(idEmpresa: number, idColaborador: number, data: FormData) {
+    return api.post<Colaborador>(
+      `/colaborador/${idEmpresa}/${idColaborador}/upload-foto`,
+      data,
+    )
+  },
 }
 
 export const pontoApi = {
@@ -100,6 +114,9 @@ export const pontoApi = {
 }
 
 export const userApi = {
+  me() {
+    return api.get<UserProfile>('/user/me')
+  },
   create(
     idEmpresa: number,
     data: { email: string; password: string; name: string; role: string },

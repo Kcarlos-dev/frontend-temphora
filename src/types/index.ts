@@ -31,6 +31,22 @@ export interface Colaborador {
   phone: string | null
   position: string | null
   status: 'ativo' | 'inativo' | 'ferias' | 'desligado'
+  foto?: string | null
+  foto_url?: string | null
+}
+
+export interface UserProfile {
+  id_user: number
+  id_empresa: number | null
+  id_colaborador: number | null
+  name: string | null
+  full_name: string | null
+  cpf: string | null
+  email: string
+  role: string
+  status: string | null
+  foto: string | null
+  foto_url: string | null
 }
 
 export interface Ponto {

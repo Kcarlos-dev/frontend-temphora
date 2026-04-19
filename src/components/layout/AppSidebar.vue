@@ -7,7 +7,10 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
-const emit = defineEmits<{ (e: 'open-change-password'): void }>()
+const emit = defineEmits<{
+  (e: 'open-change-password'): void
+  (e: 'open-profile'): void
+}>()
 
 interface NavItem {
   name: string
@@ -65,8 +68,8 @@ function handleLogout() {
       <button
         type="button"
         class="user-info"
-        title="Alterar senha"
-        @click="emit('open-change-password')"
+        title="Abrir perfil"
+        @click="emit('open-profile')"
       >
         <div class="user-avatar">
           <span class="material-symbols-rounded">person</span>
@@ -75,7 +78,14 @@ function handleLogout() {
           <span class="user-email">{{ auth.userName }}</span>
           <span class="user-role">{{ auth.userRole }}</span>
         </div>
-        <span class="material-symbols-rounded user-edit-icon">key</span>
+      </button>
+      <button
+        type="button"
+        class="user-key-btn"
+        title="Alterar senha"
+        @click="emit('open-change-password')"
+      >
+        <span class="material-symbols-rounded">key</span>
       </button>
       <button class="logout-btn" title="Sair" @click="handleLogout">
         <span class="material-symbols-rounded">logout</span>
@@ -187,15 +197,27 @@ function handleLogout() {
   background: rgba(255, 255, 255, 0.08);
 }
 
-.user-info:hover .user-edit-icon {
+.user-key-btn {
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  color: rgba(255, 255, 255, 0.45);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-key-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.9);
 }
 
-.user-edit-icon {
-  font-size: 16px;
-  color: rgba(255, 255, 255, 0.35);
-  flex-shrink: 0;
-  transition: color 0.15s ease;
+.user-key-btn .material-symbols-rounded {
+  font-size: 18px;
 }
 
 .user-avatar {
