@@ -25,6 +25,12 @@ const cpfColaborador = ref<string | null>(null)
 const cpfInput = ref('')
 const arquivoNovo = ref<File | null>(null)
 
+// Paginação server-side simples (default pageSize=10). A API devolve
+// { data, page, pageSize, hasMore }.
+const page = ref(1)
+const pageSize = ref(10)
+const hasMore = ref(false)
+
 function apenasDigitosCpf(s: string) {
   return s.replace(/\D/g, '')
 }
@@ -153,7 +159,7 @@ async function handleSave() {
       arquivoNovo.value = null
     }
     showModal.value = false
-    await loadAtestados()
+    await loadAtestados({ resetPage: true })
   } catch (err: any) {
     errorMsg.value = err.response?.data?.message ?? 'Erro ao salvar'
   } finally {
@@ -166,24 +172,51 @@ async function handleDelete(id: number) {
   try {
     await atestadoApi.remove(auth.empresaId, id)
     await loadAtestados()
+    // Se a página atual ficou vazia mas ainda existe conteúdo antes, volta uma página.
+    if (atestados.value.length === 0 && page.value > 1) {
+      page.value -= 1
+      await loadAtestados()
+    }
     successMsg.value = 'Atestado excluído!'
   } catch (err: any) {
     errorMsg.value = err.response?.data?.message ?? 'Erro ao excluir'
   }
 }
 
-async function loadAtestados() {
+async function loadAtestados(opts?: { resetPage?: boolean }) {
   if (!auth.empresaId || !cpfColaborador.value) return
+  if (opts?.resetPage) page.value = 1
+  loading.value = true
   try {
-    const res = await atestadoApi.listByCpf(auth.empresaId, cpfColaborador.value)
-    atestados.value = res.data
+    const res = await atestadoApi.listByCpf(
+      auth.empresaId,
+      cpfColaborador.value,
+      page.value,
+      pageSize.value,
+    )
+    atestados.value = res.data.data
+    hasMore.value = res.data.hasMore
   } catch (err: any) {
+    // Mantido por retrocompatibilidade. Agora a API responde 200 com data:[]
+    // quando não há atestados, mas se algum deploy antigo ainda devolver 404
+    // a UI continua entendendo como "lista vazia".
     if (err.response?.status === 404) {
       atestados.value = []
+      hasMore.value = false
     } else {
       errorMsg.value = err.response?.data?.message ?? 'Erro ao carregar atestados'
     }
+  } finally {
+    loading.value = false
   }
+}
+
+function goToPage(next: number) {
+  if (next < 1) return
+  if (next > page.value && !hasMore.value) return
+  if (next === page.value) return
+  page.value = next
+  void loadAtestados()
 }
 
 async function confirmarCpf() {
@@ -212,7 +245,7 @@ async function confirmarCpf() {
     }
 
     cpfColaborador.value = colab.cpf?.trim() || digitos
-    await loadAtestados()
+    await loadAtestados({ resetPage: true })
   } catch (err: any) {
     if (err?.message === 'cpf_nao_encontrado') {
       errorMsg.value = 'CPF não encontrado no cadastro.'
@@ -349,6 +382,34 @@ async function confirmarCpf() {
             </div>
           </div>
         </div>
+
+        <nav
+          v-if="page > 1 || hasMore"
+          class="pagination"
+          aria-label="Paginação de atestados"
+        >
+          <button
+            type="button"
+            class="btn-outline pagination-btn"
+            :disabled="page <= 1 || loading"
+            @click="goToPage(page - 1)"
+          >
+            <span class="material-symbols-rounded">chevron_left</span>
+            <span class="btn-text">Anterior</span>
+          </button>
+          <span class="pagination-info">
+            Página <strong>{{ page }}</strong>
+          </span>
+          <button
+            type="button"
+            class="btn-outline pagination-btn"
+            :disabled="!hasMore || loading"
+            @click="goToPage(page + 1)"
+          >
+            <span class="btn-text">Próxima</span>
+            <span class="material-symbols-rounded">chevron_right</span>
+          </button>
+        </nav>
       </template>
 
       <!-- Modal -->
@@ -638,6 +699,46 @@ async function confirmarCpf() {
 .action-btn:hover { background: var(--color-bg); }
 .action-btn.danger:hover { color: var(--color-danger); }
 .action-btn .material-symbols-rounded { font-size: 16px; }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.pagination-info {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: var(--color-bg);
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-btn .material-symbols-rounded { font-size: 18px; }
 
 /* Modal */
 .modal-overlay {

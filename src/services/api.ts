@@ -4,6 +4,7 @@ import type {
   Colaborador,
   Ponto,
   PontoEmpresaPage,
+  PagedResponse,
   Atestado,
   User,
   UserProfile,
@@ -63,8 +64,13 @@ export const empresaApi = {
 }
 
 export const colaboradorApi = {
-  list(idEmpresa: number) {
-    return api.get<Colaborador[]>(`/colaborador/${idEmpresa}`)
+  // Listagem paginada (default page=1, pageSize=10). A API devolve
+  // { data, page, pageSize, hasMore } — se `hasMore` for true, ainda tem
+  // colaborador para a próxima página.
+  list(idEmpresa: number, page = 1, pageSize = 10) {
+    return api.get<PagedResponse<Colaborador>>(`/colaborador/${idEmpresa}`, {
+      params: { page, pageSize },
+    })
   },
   getByCpf(idEmpresa: number, cpf: string) {
     return api.get<Colaborador>(
@@ -89,8 +95,12 @@ export const colaboradorApi = {
 }
 
 export const pontoApi = {
-  list(idEmpresa: number, idColaborador: number) {
-    return api.get<Ponto[]>(`/ponto/${idEmpresa}/${idColaborador}`)
+  // Listagem paginada dos pontos de um colaborador (default page=1, pageSize=10).
+  list(idEmpresa: number, idColaborador: number, page = 1, pageSize = 10) {
+    return api.get<PagedResponse<Ponto>>(
+      `/ponto/${idEmpresa}/${idColaborador}`,
+      { params: { page, pageSize } },
+    )
   },
   listByEmpresa(idEmpresa: number, page = 1, pageSize = 20) {
     return api.get<PontoEmpresaPage>(`/ponto/${idEmpresa}`, {
@@ -135,10 +145,15 @@ export const userApi = {
 }
 
 export const atestadoApi = {
-  /** Lista atestados do colaborador pelo CPF (rota atual da API). */
-  listByCpf(idEmpresa: number, cpf: string) {
-    return api.get<Atestado[]>(
+  /**
+   * Lista atestados do colaborador pelo CPF, com paginação simples
+   * (default page=1, pageSize=10). Quando a lista estiver vazia a API
+   * agora retorna 200 com `data: []` em vez de 404.
+   */
+  listByCpf(idEmpresa: number, cpf: string, page = 1, pageSize = 10) {
+    return api.get<PagedResponse<Atestado>>(
       `/atestado/${idEmpresa}/cpf/${encodeURIComponent(cpf)}`,
+      { params: { page, pageSize } },
     )
   },
   /** multipart/form-data: id_colaborador, data_inicio, data_fim, status e arquivo no campo `arquivo` (o app exige anexo ao criar). */

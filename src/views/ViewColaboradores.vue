@@ -19,6 +19,13 @@ const saving = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
 
+// Paginação server-side simples (default pageSize=10). A busca/filtro por status
+// acontecem em cima da página carregada — por isso mantemos um pageSize baixo
+// e botões de "Anterior / Próxima" para navegar entre páginas.
+const page = ref(1)
+const pageSize = ref(10)
+const hasMore = ref(false)
+
 /** Admin/RH: empresa vem do login. Root: escolhe o ID da empresa no formulário. */
 const empresaReadonly = computed(() => auth.empresaId != null && !auth.isRoot)
 
@@ -174,14 +181,24 @@ async function toggleStatus(colab: Colaborador) {
 
 async function fetchColaboradores() {
   if (!auth.empresaId) return
+  loading.value = true
   try {
-    const res = await colaboradorApi.list(auth.empresaId)
-    colaboradores.value = res.data
+    const res = await colaboradorApi.list(auth.empresaId, page.value, pageSize.value)
+    colaboradores.value = res.data.data
+    hasMore.value = res.data.hasMore
   } catch {
     // silent
   } finally {
     loading.value = false
   }
+}
+
+function goToPage(next: number) {
+  if (next < 1) return
+  if (next > page.value && !hasMore.value) return
+  if (next === page.value) return
+  page.value = next
+  void fetchColaboradores()
 }
 
 onMounted(async () => {
@@ -256,6 +273,7 @@ onMounted(async () => {
 
         <div v-else class="colab-list">
           <div v-for="colab in filtered" :key="colab.id" class="colab-card">
+
             <div class="colab-main">
               <div class="colab-avatar">
                 {{ colab.full_name.charAt(0).toUpperCase() }}
@@ -286,6 +304,34 @@ onMounted(async () => {
             </div>
           </div>
         </div>
+
+        <nav
+          v-if="page > 1 || hasMore"
+          class="pagination"
+          aria-label="Paginação de colaboradores"
+        >
+          <button
+            type="button"
+            class="btn-outline pagination-btn"
+            :disabled="page <= 1 || loading"
+            @click="goToPage(page - 1)"
+          >
+            <span class="material-symbols-rounded">chevron_left</span>
+            <span class="btn-text">Anterior</span>
+          </button>
+          <span class="pagination-info">
+            Página <strong>{{ page }}</strong>
+          </span>
+          <button
+            type="button"
+            class="btn-outline pagination-btn"
+            :disabled="!hasMore || loading"
+            @click="goToPage(page + 1)"
+          >
+            <span class="btn-text">Próxima</span>
+            <span class="material-symbols-rounded">chevron_right</span>
+          </button>
+        </nav>
       </template>
 
       <!-- Modal -->
@@ -659,6 +705,46 @@ onMounted(async () => {
 .action-btn.success:hover { color: var(--color-success); }
 
 .action-btn .material-symbols-rounded { font-size: 18px; }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.pagination-info {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: var(--color-bg);
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-btn .material-symbols-rounded { font-size: 18px; }
 
 /* Modal */
 .modal-overlay {

@@ -20,7 +20,7 @@ const navItems = computed<NavItem[]>(() => {
     { name: 'Equipe', icon: 'group', to: '/colaboradores', roles: ['admin', 'root', 'rh'] },
     { name: 'Atestados', icon: 'description', to: '/atestados' },
     { name: 'Empresa', icon: 'business', to: '/empresa', roles: ['admin', 'root', 'rh'] },
-    { name: 'Usuários', icon: 'manage_accounts', to: '/usuarios', roles: ['root'] },
+    { name: 'Usuários', icon: 'manage_accounts', to: '/usuarios', roles: ['admin', 'root', 'rh'] },
     { name: 'Nova empresa', icon: 'add_business', to: '/nova-empresa', roles: ['root'] },
   ]
   return items.filter(

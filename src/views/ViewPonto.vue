@@ -23,9 +23,11 @@ const geoHint = ref<string | null>(null)
 const successMsg = ref('')
 const errorMsg = ref('')
 
-// Paginação client-side (lista completa dividida em páginas locais).
+// Paginação server-side simples (default pageSize=10). Default da API também é
+// 10, então sem informar esses parâmetros o backend devolve só os 10 primeiros.
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
+const hasMore = ref(false)
 
 const isManagerView = computed(() =>
   ['admin', 'rh', 'root'].includes(auth.userRole),
@@ -45,19 +47,10 @@ const searching = ref(false)
 const selectedColaborador = ref<Colaborador | null>(null)
 const selectedColaboradorId = ref<number | null>(null)
 
-const pontosOrdenados = computed(() =>
-  [...pontos.value].sort((a, b) => {
-    return parseDataHora(b.data_hora).getTime() - parseDataHora(a.data_hora).getTime()
-  }),
-)
-const totalRegistros = computed(() => pontosOrdenados.value.length)
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(totalRegistros.value / pageSize.value)),
-)
-const pontosPagina = computed(() => {
-  const start = (page.value - 1) * pageSize.value
-  return pontosOrdenados.value.slice(start, start + pageSize.value)
-})
+// A API já devolve os pontos ordenados do mais recente pro mais antigo,
+// então aqui é só um passthrough (mantive a referência pra UI não quebrar).
+const pontosOrdenados = computed(() => pontos.value)
+const totalRegistros = computed(() => pontos.value.length)
 
 function formatMapsUrl(lat: number, lng: number): string {
   return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
@@ -110,7 +103,7 @@ const showExportConfirm = ref(false)
 const exporting = ref(false)
 
 const exportTargetColaboradorId = computed<number | null>(() =>
-  isManagerView.value ? selectedColaboradorId.value : auth.colaboradorId,
+  isManagerView.value ? selectedColaboradorId.value : (auth.colaboradorId ?? null),
 )
 
 const exportTargetNome = computed(() => {
@@ -134,7 +127,7 @@ const tipos = [
 
 const groupedByDate = computed(() => {
   const groups: Record<string, Ponto[]> = {}
-  for (const p of pontosPagina.value) {
+  for (const p of pontosOrdenados.value) {
     const date = parseDataHora(p.data_hora).toLocaleDateString('pt-BR')
     if (!groups[date]) groups[date] = []
     groups[date].push(p)
@@ -213,6 +206,8 @@ async function registrarPonto() {
     geoLng.value = null
     geoHint.value = null
     if (fileInputRef.value) fileInputRef.value.value = ''
+    // Volta pra primeira página pra exibir o registro recém-criado no topo.
+    page.value = 1
     // Se um gestor está vendo um colaborador específico, refaz a busca desse colaborador;
     // senão, recarrega os pontos pessoais (colaborador comum).
     if (isManagerView.value && selectedColaboradorId.value) {
@@ -240,9 +235,16 @@ async function fetchPontosPessoais() {
     loading.value = false
     return
   }
+  loading.value = true
   try {
-    const res = await pontoApi.list(auth.empresaId, auth.colaboradorId)
-    pontos.value = res.data
+    const res = await pontoApi.list(
+      auth.empresaId,
+      auth.colaboradorId,
+      page.value,
+      pageSize.value,
+    )
+    pontos.value = res.data.data
+    hasMore.value = res.data.hasMore
   } catch {
     // silent
   } finally {
@@ -250,17 +252,27 @@ async function fetchPontosPessoais() {
   }
 }
 
-async function fetchPontosColaborador(idColaborador: number) {
+async function fetchPontosColaborador(
+  idColaborador: number,
+  opts?: { resetPage?: boolean },
+) {
   if (!auth.empresaId) return
   loading.value = true
+  if (opts?.resetPage) page.value = 1
   try {
-    const res = await pontoApi.list(auth.empresaId, idColaborador)
-    pontos.value = Array.isArray(res.data) ? res.data : []
-    page.value = 1
+    const res = await pontoApi.list(
+      auth.empresaId,
+      idColaborador,
+      page.value,
+      pageSize.value,
+    )
+    pontos.value = res.data.data
+    hasMore.value = res.data.hasMore
   } catch (err: any) {
     const status = err.response?.status
     if (status === 404) {
       pontos.value = []
+      hasMore.value = false
     } else {
       errorMsg.value =
         err.response?.data?.message ?? 'Erro ao carregar pontos do colaborador'
@@ -305,9 +317,12 @@ async function buscarColaborador() {
       }
       idColab = parsed
       // Tenta enriquecer com dados da lista (opcional — a rota direta por id não existe).
+      // Uso pageSize grande para aumentar a chance de encontrar o colaborador sem
+      // precisar paginar; se tiver mais de 200 colaboradores o enriquecimento falha
+      // silenciosamente (a UI continua funcionando só com o ID).
       try {
-        const lista = await colaboradorApi.list(auth.empresaId)
-        colab = lista.data.find((c) => c.id === parsed) ?? null
+        const lista = await colaboradorApi.list(auth.empresaId, 1, 200)
+        colab = lista.data.data.find((c) => c.id === parsed) ?? null
       } catch {
         colab = null
       }
@@ -323,7 +338,7 @@ async function buscarColaborador() {
 
     selectedColaborador.value = colab
     selectedColaboradorId.value = idColab
-    await fetchPontosColaborador(idColab)
+    await fetchPontosColaborador(idColab, { resetPage: true })
   } catch (err: any) {
     const status = err.response?.status
     if (status === 404) {
@@ -346,6 +361,7 @@ function limparBusca() {
   selectedColaboradorId.value = null
   pontos.value = []
   page.value = 1
+  hasMore.value = false
   errorMsg.value = ''
 }
 
@@ -359,8 +375,15 @@ async function fetchPontos() {
 }
 
 function goToPage(next: number) {
-  if (next < 1 || next > totalPages.value || next === page.value) return
+  if (next < 1) return
+  if (next > page.value && !hasMore.value) return
+  if (next === page.value) return
   page.value = next
+  if (isManagerView.value && selectedColaboradorId.value) {
+    void fetchPontosColaborador(selectedColaboradorId.value)
+  } else {
+    void fetchPontosPessoais()
+  }
 }
 
 function abrirConfirmacaoExport() {
@@ -522,7 +545,7 @@ onMounted(fetchPontos)
               <template v-if="selectedColaborador?.cpf">
                 · CPF {{ selectedColaborador.cpf }}
               </template>
-              · {{ totalRegistros }} registro(s)
+              · {{ totalRegistros }} nesta página
             </span>
           </div>
         </div>
@@ -643,26 +666,26 @@ onMounted(fetchPontos)
         </div>
 
         <nav
-          v-if="totalPages > 1"
+          v-if="page > 1 || hasMore"
           class="pagination"
           aria-label="Paginação de pontos"
         >
           <button
             type="button"
             class="btn-outline pagination-btn"
-            :disabled="page <= 1"
+            :disabled="page <= 1 || loading"
             @click="goToPage(page - 1)"
           >
             <span class="material-symbols-rounded">chevron_left</span>
             <span class="btn-text">Anterior</span>
           </button>
           <span class="pagination-info">
-            Página <strong>{{ page }}</strong> de <strong>{{ totalPages }}</strong>
+            Página <strong>{{ page }}</strong>
           </span>
           <button
             type="button"
             class="btn-outline pagination-btn"
-            :disabled="page >= totalPages"
+            :disabled="!hasMore || loading"
             @click="goToPage(page + 1)"
           >
             <span class="btn-text">Próxima</span>

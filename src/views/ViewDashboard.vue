@@ -75,15 +75,17 @@ function tipoIcon(tipo: string) {
 onMounted(async () => {
   try {
     if (auth.empresaId && auth.colaboradorId) {
+      // Dashboard mostra só os últimos registros; pageSize=10 é o default da API.
       const [pontosRes] = await Promise.all([
         pontoApi.list(auth.empresaId, auth.colaboradorId),
       ])
-      pontos.value = pontosRes.data
+      pontos.value = pontosRes.data.data
     }
 
     if (auth.isAdmin && auth.empresaId) {
+      // Dashboard lista só os primeiros colaboradores (preview).
       const colabRes = await colaboradorApi.list(auth.empresaId)
-      colaboradores.value = colabRes.data
+      colaboradores.value = colabRes.data.data
     }
   } catch {
     // handle silently

@@ -70,6 +70,16 @@ export interface PontoEmpresaPage {
   totalPages: number
 }
 
+// Paginação simples (hasMore em vez de total) usada em listagens onde fazer
+// COUNT(*) seria caro. Backend devolve `pageSize + 1` e fatia pra detectar
+// se existe próxima página.
+export interface PagedResponse<T> {
+  data: T[]
+  page: number
+  pageSize: number
+  hasMore: boolean
+}
+
 export interface Atestado {
   id: number
   id_colaborador: number
