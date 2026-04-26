@@ -72,10 +72,18 @@ export const colaboradorApi = {
       params: { page, pageSize },
     })
   },
-  getByCpf(idEmpresa: number, cpf: string) {
-    return api.get<Colaborador>(
+  async getByCpf(idEmpresa: number, cpf: string) {
+    const res = await api.get<Colaborador>(
       `/colaborador/${idEmpresa}/${encodeURIComponent(cpf)}`,
     )
+    if (Number(res.data.id_empresa) !== Number(idEmpresa)) {
+      return Promise.reject(
+        Object.assign(new Error('Colaborador não encontrado.'), {
+          response: { status: 404, data: { message: 'Colaborador não encontrado.' } },
+        }),
+      )
+    }
+    return res
   },
   create(idEmpresa: number, data: Partial<Colaborador>) {
     return api.post<Colaborador>(`/colaborador/${idEmpresa}`, data)
