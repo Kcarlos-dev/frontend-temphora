@@ -287,6 +287,7 @@ async function handleResetPassword() {
                 <option value="admin">admin</option>
                 <option value="rh">rh</option>
                 <option value="colaborador">colaborador</option>
+                <option value="kiosk">kiosk</option>
               </select>
               <p class="field-hint">
                 Não é permitido criar usuário com papel root pela API.
@@ -909,6 +910,11 @@ async function handleResetPassword() {
 .recent-role[data-role='colaborador'] {
   background: #dcfce7;
   color: #166534;
+}
+
+.recent-role[data-role='kiosk'] {
+  background: #f3e8ff;
+  color: #7e22ce;
 }
 
 .recent-id {

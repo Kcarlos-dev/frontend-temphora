@@ -11,6 +11,12 @@ const router = createRouter({
       meta: { public: true },
     },
     {
+      path: '/kiosk',
+      name: 'kiosk',
+      component: () => import('@/views/ViewKiosk.vue'),
+      meta: { roles: ['kiosk'] },
+    },
+    {
       path: '/dashboard',
       name: 'dashboard',
       component: () => import('@/views/ViewDashboard.vue'),
@@ -62,9 +68,10 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   const auth = useAuthStore()
+  const defaultAuthenticatedRoute = auth.userRole === 'kiosk' ? '/kiosk' : '/dashboard'
 
   if (to.meta.public) {
-    if (auth.isAuthenticated) return '/dashboard'
+    if (auth.isAuthenticated) return defaultAuthenticatedRoute
     return true
   }
 
@@ -74,7 +81,11 @@ router.beforeEach((to) => {
 
   const requiredRoles = to.meta.roles as string[] | undefined
   if (requiredRoles && !requiredRoles.includes(auth.userRole)) {
-    return '/dashboard'
+    return defaultAuthenticatedRoute
+  }
+
+  if (auth.userRole === 'kiosk' && to.path !== '/kiosk') {
+    return '/kiosk'
   }
 
   return true

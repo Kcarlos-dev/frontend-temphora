@@ -18,7 +18,7 @@ function blurEmailLogin() {
 async function handleLogin() {
   try {
     await auth.login(normalizeEmail(email.value), password.value)
-    router.push('/dashboard')
+    router.push(auth.userRole === 'kiosk' ? '/kiosk' : '/dashboard')
   } catch {
     // error is set in store
   }

@@ -35,6 +35,10 @@ export interface Colaborador {
   foto_url?: string | null
 }
 
+export interface KioskMatchResult extends Colaborador {
+  foto?: string | null
+}
+
 export interface UserProfile {
   id_user: number
   id_empresa: number | null

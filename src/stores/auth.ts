@@ -3,6 +3,8 @@ import { ref, computed } from 'vue'
 import { authApi, empresaApi } from '@/services/api'
 import type { AuthPayload, Empresa } from '@/types'
 
+const ROOT_EMPRESA_CONTEXT_KEY = 'temphora_root_empresa_context'
+
 function parseJwt(token: string): AuthPayload | null {
   try {
     const base64 = token.split('.')[1]
@@ -17,9 +19,25 @@ function parseJwt(token: string): AuthPayload | null {
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('temphora_token'))
   const payload = ref<AuthPayload | null>(token.value ? parseJwt(token.value) : null)
+  /** Só para papel `root`: ID da empresa usada nas rotas `/.../:id_empresa/...`. Persistido em `sessionStorage`. */
+  const rootEmpresaContextId = ref<number | null>(null)
   const empresa = ref<Empresa | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  function readStoredRootContext() {
+    rootEmpresaContextId.value = null
+    if (payload.value?.role !== 'root') {
+      sessionStorage.removeItem(ROOT_EMPRESA_CONTEXT_KEY)
+      return
+    }
+    const raw = sessionStorage.getItem(ROOT_EMPRESA_CONTEXT_KEY)
+    if (!raw?.trim()) return
+    const n = Number(raw.trim())
+    if (Number.isFinite(n) && n > 0) {
+      rootEmpresaContextId.value = Math.trunc(n)
+    }
+  }
 
   const isAuthenticated = computed(() => !!token.value && !!payload.value)
   const isAdmin = computed(() =>
@@ -27,9 +45,28 @@ export const useAuthStore = defineStore('auth', () => {
   )
   const isRoot = computed(() => payload.value?.role === 'root')
   const userName = computed(() => payload.value?.email ?? '')
-  const empresaId = computed(() => payload.value?.empresaId)
+
+  const empresaId = computed(() => {
+    if (payload.value?.role === 'root') {
+      const ctx = rootEmpresaContextId.value
+      if (ctx != null && ctx > 0) return ctx
+    }
+    return payload.value?.empresaId ?? null
+  })
+
   const colaboradorId = computed(() => payload.value?.colaboradorId)
   const userRole = computed(() => payload.value?.role ?? '')
+
+  function setRootEmpresaContext(id: number | null) {
+    if (payload.value?.role !== 'root') return
+    if (id == null || !Number.isFinite(id) || id <= 0) {
+      rootEmpresaContextId.value = null
+      sessionStorage.removeItem(ROOT_EMPRESA_CONTEXT_KEY)
+      return
+    }
+    rootEmpresaContextId.value = Math.trunc(id)
+    sessionStorage.setItem(ROOT_EMPRESA_CONTEXT_KEY, String(rootEmpresaContextId.value))
+  }
 
   async function login(email: string, password: string) {
     loading.value = true
@@ -41,8 +78,11 @@ export const useAuthStore = defineStore('auth', () => {
       payload.value = parseJwt(jwt)
       localStorage.setItem('temphora_token', jwt)
 
-      if (payload.value?.empresaId) {
+      readStoredRootContext()
+      if (empresaId.value != null) {
         await fetchEmpresa()
+      } else {
+        empresa.value = null
       }
     } catch (err: any) {
       error.value = err.response?.data?.message ?? 'Erro ao fazer login'
@@ -53,12 +93,16 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function fetchEmpresa() {
-    if (!payload.value?.empresaId) return
+    const id = empresaId.value
+    if (id == null) {
+      empresa.value = null
+      return
+    }
     try {
-      const res = await empresaApi.get(payload.value.empresaId)
+      const res = await empresaApi.get(id)
       empresa.value = res.data
     } catch {
-      // silently fail
+      empresa.value = null
     }
   }
 
@@ -66,6 +110,8 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     payload.value = null
     empresa.value = null
+    rootEmpresaContextId.value = null
+    sessionStorage.removeItem(ROOT_EMPRESA_CONTEXT_KEY)
     localStorage.removeItem('temphora_token')
   }
 
@@ -74,13 +120,16 @@ export const useAuthStore = defineStore('auth', () => {
       payload.value = parseJwt(token.value)
       if (!payload.value) {
         logout()
+        return
       }
+      readStoredRootContext()
     }
   }
 
   return {
     token,
     payload,
+    rootEmpresaContextId,
     empresa,
     loading,
     error,
@@ -95,5 +144,6 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     fetchEmpresa,
     initialize,
+    setRootEmpresaContext,
   }
 })

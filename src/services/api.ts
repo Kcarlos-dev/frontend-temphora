@@ -2,6 +2,7 @@ import axios, { type InternalAxiosRequestConfig } from 'axios'
 import type {
   Empresa,
   Colaborador,
+  KioskMatchResult,
   Ponto,
   PontoEmpresaPage,
   PagedResponse,
@@ -128,6 +129,12 @@ export const pontoApi = {
     return api.get(`/ponto/planilha/${idEmpresa}/${idColaborador}/${dataInicial}/${dataFinal}`, {
       responseType: 'blob',
     })
+  },
+}
+
+export const kioskApi = {
+  match(idEmpresa: number, data: FormData) {
+    return api.post<KioskMatchResult>(`/kiosk/${idEmpresa}`, data)
   },
 }
 

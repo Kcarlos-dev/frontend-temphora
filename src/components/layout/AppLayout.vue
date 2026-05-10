@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import AppSidebar from './AppSidebar.vue'
 import AppBottomNav from './AppBottomNav.vue'
+import RootEmpresaContextBar from '@/components/RootEmpresaContextBar.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
 import ProfileModal from '@/components/ProfileModal.vue'
 
@@ -25,6 +26,7 @@ function handleLogout() {
       @open-change-password="showChangePassword = true"
     />
     <div class="content-column">
+      <RootEmpresaContextBar v-if="auth.isRoot" />
       <header class="mobile-topbar">
         <button
           type="button"

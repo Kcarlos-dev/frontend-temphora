@@ -14,6 +14,10 @@ interface NavItem {
 }
 
 const navItems = computed<NavItem[]>(() => {
+  if (auth.userRole === 'kiosk') {
+    return [{ name: 'Bater ponto', icon: 'point_scan', to: '/kiosk' }]
+  }
+
   const items: NavItem[] = [
     { name: 'Home', icon: 'dashboard', to: '/dashboard' },
     { name: 'Ponto', icon: 'schedule', to: '/ponto' },
