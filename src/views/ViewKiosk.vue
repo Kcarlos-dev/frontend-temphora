@@ -21,6 +21,11 @@ const identified = ref<KioskMatchResult | null>(null)
 const geoLat = ref<number | null>(null)
 const geoLng = ref<number | null>(null)
 
+/** Após uma captura válida, o botão "Capturar foto" fica bloqueado até reiniciar a página. */
+const captureLocked = ref(false)
+const flashActive = ref(false)
+const captureFeedback = ref(false)
+
 const tipos = [
   { value: 'entrada', label: 'Entrada', icon: 'login' },
   { value: 'saida', label: 'Saida', icon: 'logout' },
@@ -101,7 +106,19 @@ async function capturePhoto() {
   identified.value = null
   successMsg.value = ''
   errorMsg.value = ''
+
+  flashActive.value = true
+  window.setTimeout(() => {
+    flashActive.value = false
+  }, 480)
+  captureFeedback.value = true
+  captureLocked.value = true
+
   await getGeolocation()
+}
+
+function restartKiosk() {
+  window.location.reload()
 }
 
 async function identificarColaborador() {
@@ -169,18 +186,33 @@ onBeforeUnmount(() => {
 
 <template>
   <AppLayout>
-    <div class="kiosk-page">
+    <div class="kiosk-page" :class="{ 'has-footer': captureLocked }">
       <header class="page-header">
         <h1>Bater Ponto (Kiosk)</h1>
         <p class="subtitle">Capture a foto, confirme o colaborador e registre o ponto.</p>
       </header>
 
-      <div class="camera-box">
+      <div class="camera-box" :class="{ flash: flashActive }">
         <video ref="videoRef" autoplay playsinline muted class="camera-video" />
       </div>
 
+      <Transition name="kiosk-pop">
+        <div v-if="captureFeedback" class="capture-toast" role="status">
+          <span class="material-symbols-rounded capture-toast-icon">check_circle</span>
+          <span>Foto capturada. Identifique o colaborador abaixo.</span>
+        </div>
+      </Transition>
+
       <div class="actions">
-        <button type="button" class="btn-outline" @click="capturePhoto">Capturar foto</button>
+        <button
+          type="button"
+          class="btn-outline btn-capture"
+          :disabled="captureLocked"
+          @click="capturePhoto"
+        >
+          <span class="material-symbols-rounded">photo_camera</span>
+          {{ captureLocked ? 'Foto ja capturada' : 'Capturar foto' }}
+        </button>
       </div>
 
       <div class="tipo-grid">
@@ -229,16 +261,68 @@ onBeforeUnmount(() => {
       <div v-if="successMsg" class="alert success">{{ successMsg }}</div>
       <div v-if="errorMsg" class="alert error">{{ errorMsg }}</div>
     </div>
+
+    <Teleport to="body">
+      <div v-if="captureLocked" class="kiosk-restart-bar">
+        <button type="button" class="btn-restart" @click="restartKiosk">
+          <span class="material-symbols-rounded">refresh</span>
+          Nova foto — reiniciar tela
+        </button>
+      </div>
+    </Teleport>
   </AppLayout>
 </template>
 
 <style scoped>
 .kiosk-page { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.kiosk-page.has-footer { padding-bottom: 88px; }
 .page-header h1 { font-size: 1.5rem; font-weight: 800; }
 .subtitle { color: var(--color-text-secondary); font-size: 0.85rem; }
-.camera-box { border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--color-border); background: #000; }
+.camera-box {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: #000;
+}
+.camera-box.flash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  animation: kiosk-flash 0.48s ease-out;
+  pointer-events: none;
+  border-radius: inherit;
+}
+@keyframes kiosk-flash {
+  0% { opacity: 0.75; }
+  100% { opacity: 0; }
+}
 .camera-video { width: 100%; min-height: 260px; max-height: 460px; object-fit: cover; }
+.capture-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-tint-brand-bg, #ecfdf5);
+  border: 1px solid #a7f3d0;
+  color: #047857;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.capture-toast-icon { font-size: 22px; flex-shrink: 0; }
+.kiosk-pop-enter-active,
+.kiosk-pop-leave-active { transition: opacity 0.25s ease, transform 0.25s ease; }
+.kiosk-pop-enter-from,
+.kiosk-pop-leave-to { opacity: 0; transform: translateY(-6px); }
 .actions { display: flex; justify-content: center; }
+.btn-capture .material-symbols-rounded { font-size: 20px; }
+.btn-capture:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .captured-box { display: flex; flex-direction: column; gap: 10px; }
 .captured-img { width: 100%; border-radius: var(--radius-md); border: 1px solid var(--color-border); }
 .confirm-card { border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -260,4 +344,41 @@ onBeforeUnmount(() => {
 .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
 .sr-only { position: absolute; opacity: 0; pointer-events: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Barra fixa no rodapé da viewport (Teleport → body) */
+.kiosk-restart-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0));
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.92));
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.08);
+  display: flex;
+  justify-content: center;
+}
+.btn-restart {
+  width: 100%;
+  max-width: 520px;
+  padding: 14px 18px;
+  border-radius: var(--radius-md, 10px);
+  font-weight: 700;
+  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #111);
+  cursor: pointer;
+}
+.btn-restart .material-symbols-rounded {
+  font-size: 22px;
+}
+.btn-restart:active {
+  transform: scale(0.98);
+}
 </style>
