@@ -89,7 +89,6 @@ async function handleSubmit() {
       <div
         v-if="modelValue"
         class="cp-overlay"
-        @click.self="close"
       >
         <div class="cp-modal" role="dialog" aria-modal="true" aria-labelledby="cp-title">
           <div class="cp-header">

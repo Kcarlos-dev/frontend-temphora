@@ -702,7 +702,6 @@ onMounted(fetchPontos)
           <div
             v-if="showExportConfirm"
             class="modal-overlay"
-            @click.self="!exporting && (showExportConfirm = false)"
           >
             <div class="modal confirm-modal">
               <div class="modal-header">
@@ -755,7 +754,7 @@ onMounted(fetchPontos)
       <!-- Modal Registrar -->
       <Teleport to="body">
         <Transition name="fade">
-          <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
+          <div v-if="showModal" class="modal-overlay">
             <div class="modal">
               <div class="modal-header">
                 <h3>Registrar Ponto</h3>

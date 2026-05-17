@@ -222,7 +222,6 @@ onBeforeUnmount(() => {
         <div
           v-if="capturedPreviewUrl"
           class="modal-overlay"
-          @click.self="!matching && !registering && !identified && fecharModalCaptura()"
         >
           <div
             class="modal kiosk-capture-modal"

@@ -415,7 +415,7 @@ async function confirmarCpf() {
       <!-- Modal -->
       <Teleport to="body">
         <Transition name="fade">
-          <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
+          <div v-if="showModal" class="modal-overlay">
             <div class="modal">
               <div class="modal-header">
                 <h3>{{ editing ? 'Editar' : 'Novo' }} Atestado</h3>

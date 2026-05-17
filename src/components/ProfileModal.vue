@@ -123,7 +123,7 @@ watch(
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="modelValue" class="pm-overlay" @click.self="close">
+      <div v-if="modelValue" class="pm-overlay">
         <div
           class="pm-modal"
           role="dialog"

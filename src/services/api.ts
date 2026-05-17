@@ -32,17 +32,10 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config
 })
 
-function apiErrorMessage(data: unknown): string {
+/** Lê mensagem de erro em respostas JSON ou Blob (export CSV usa responseType blob). */
+export async function extractApiErrorMessage(data: unknown): Promise<string> {
   if (data == null) return ''
   if (typeof data === 'string') return data
-  if (typeof data === 'object' && data !== null && 'message' in data) {
-    return String((data as { message?: string }).message ?? '')
-  }
-  return ''
-}
-
-/** Lê mensagem de erro em respostas blob (ex.: export CSV). */
-export async function extractApiErrorMessage(data: unknown): Promise<string> {
   if (data instanceof Blob) {
     try {
       const text = await data.text()
@@ -52,35 +45,26 @@ export async function extractApiErrorMessage(data: unknown): Promise<string> {
       return ''
     }
   }
-  return apiErrorMessage(data)
-}
-
-function shouldForceLogoutOn401(error: unknown): boolean {
-  const err = error as {
-    response?: { status?: number; data?: unknown }
-    config?: { url?: string }
+  if (typeof data === 'object' && data !== null && 'message' in data) {
+    return String((data as { message?: string }).message ?? '')
   }
-  if (err.response?.status !== 401) return false
-  if ((err.config?.url ?? '').includes('/auth/login')) return false
-
-  const message = apiErrorMessage(err.response?.data)
-  const skipLogout = [
-    'Empresa inválida',
-    'Empresa não fornecida',
-    'Não possue ponto registrado',
-    'Usuário ou senha inválidos',
-  ]
-  if (skipLogout.some((m) => message.includes(m))) return false
-
-  return /token/i.test(message) || message.length === 0
+  return ''
 }
+
+/**
+ * Rotas que retornam 401 como erro de negócio (ex.: planilha sem registros no período).
+ * Para essas, o componente trata o erro e mostra uma notificação — não desloga o usuário.
+ */
+const SKIP_LOGOUT_ON_401 = [/\/ponto\/planilha\//]
 
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    if (shouldForceLogoutOn401(error)) {
-      localStorage.removeItem('temphora_token')
-      if (window.location.pathname !== '/login') {
+    if (error.response?.status === 401) {
+      const url: string = error.config?.url ?? ''
+      const skip = SKIP_LOGOUT_ON_401.some((re) => re.test(url))
+      if (!skip) {
+        localStorage.removeItem('temphora_token')
         window.location.href = '/login'
       }
     }
