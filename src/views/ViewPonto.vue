@@ -96,6 +96,18 @@ function toInputDateString(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+/**
+ * O backend faz BETWEEN no MySQL com `data_final` interpretada como 00:00:00 do
+ * dia escolhido — pontos batidos ao longo do próprio dia ficam de fora. Soma 1
+ * dia na data final para a query incluir o dia inteiro selecionado pelo usuário.
+ */
+function somarUmDia(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  if (!y || !m || !d) return dateStr
+  const next = new Date(y, m - 1, d + 1)
+  return toInputDateString(next)
+}
+
 const now = new Date()
 const exportDataInicial = ref(toInputDateString(new Date(now.getFullYear(), now.getMonth(), 1)))
 const exportDataFinal = ref(toInputDateString(now))
@@ -415,13 +427,17 @@ async function exportarCsv() {
   const dataInicial = exportDataInicial.value.trim()
   const dataFinal = exportDataFinal.value.trim()
 
+  // Backend usa BETWEEN no MySQL: data_final vira 00:00:00 e exclui os pontos
+  // do próprio dia. Mandamos data_final + 1 dia para abranger o dia escolhido.
+  const dataFinalQuery = somarUmDia(dataFinal)
+
   exporting.value = true
   try {
     const res = await pontoApi.exportCsv(
       auth.empresaId,
       idColab,
       dataInicial,
-      dataFinal,
+      dataFinalQuery,
     )
     const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' })
     const fileName = `ponto_${dataInicial}_${dataFinal}.csv`
@@ -758,7 +774,7 @@ onMounted(fetchPontos)
             <div class="modal">
               <div class="modal-header">
                 <h3>Registrar Ponto</h3>
-                <button class="modal-close" @click="showModal = false">
+                <button type="button" class="modal-close" @click="showModal = false">
                   <span class="material-symbols-rounded">close</span>
                 </button>
               </div>
@@ -783,11 +799,12 @@ onMounted(fetchPontos)
                 </div>
 
                 <div class="field">
-                  <label>Foto</label>
-                  <div class="file-upload" @click="fileInputRef && fileInputRef.click()">
+                  <label class="field-label" for="ponto-foto-input">Foto</label>
+                  <label class="file-upload" for="ponto-foto-input">
                     <span class="material-symbols-rounded">photo_camera</span>
                     <span>{{ fotoFile?.name ?? 'Tirar foto ou escolher arquivo' }}</span>
                     <input
+                      id="ponto-foto-input"
                       ref="fileInputRef"
                       type="file"
                       accept="image/*"
@@ -796,7 +813,7 @@ onMounted(fetchPontos)
                       @change="handleFileChange"
                       required
                     />
-                  </div>
+                  </label>
                   <div v-if="fotoFile" class="geo-box">
                     <template v-if="geoLoading">
                       <span class="spinner geo-spinner" />
@@ -1417,6 +1434,8 @@ onMounted(fetchPontos)
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: 0.85rem;
+  font-weight: 400;
+  margin-bottom: 0;
   color: var(--color-text-secondary);
   transition: border-color 0.15s;
 }
