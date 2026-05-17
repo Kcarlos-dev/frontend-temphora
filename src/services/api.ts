@@ -32,12 +32,57 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config
 })
 
+function apiErrorMessage(data: unknown): string {
+  if (data == null) return ''
+  if (typeof data === 'string') return data
+  if (typeof data === 'object' && data !== null && 'message' in data) {
+    return String((data as { message?: string }).message ?? '')
+  }
+  return ''
+}
+
+/** Lê mensagem de erro em respostas blob (ex.: export CSV). */
+export async function extractApiErrorMessage(data: unknown): Promise<string> {
+  if (data instanceof Blob) {
+    try {
+      const text = await data.text()
+      const parsed = JSON.parse(text) as { message?: string }
+      return parsed.message ?? text
+    } catch {
+      return ''
+    }
+  }
+  return apiErrorMessage(data)
+}
+
+function shouldForceLogoutOn401(error: unknown): boolean {
+  const err = error as {
+    response?: { status?: number; data?: unknown }
+    config?: { url?: string }
+  }
+  if (err.response?.status !== 401) return false
+  if ((err.config?.url ?? '').includes('/auth/login')) return false
+
+  const message = apiErrorMessage(err.response?.data)
+  const skipLogout = [
+    'Empresa inválida',
+    'Empresa não fornecida',
+    'Não possue ponto registrado',
+    'Usuário ou senha inválidos',
+  ]
+  if (skipLogout.some((m) => message.includes(m))) return false
+
+  return /token/i.test(message) || message.length === 0
+}
+
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    if (error.response?.status === 401) {
+    if (shouldForceLogoutOn401(error)) {
       localStorage.removeItem('temphora_token')
-      window.location.href = '/login'
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   },

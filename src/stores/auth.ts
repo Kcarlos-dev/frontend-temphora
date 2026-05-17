@@ -10,7 +10,11 @@ function parseJwt(token: string): AuthPayload | null {
     const base64 = token.split('.')[1]
     if (!base64) return null
     const json = atob(base64.replace(/-/g, '+').replace(/_/g, '/'))
-    return JSON.parse(json)
+    const payload = JSON.parse(json) as AuthPayload & { exp?: number }
+    if (payload.exp != null && payload.exp * 1000 < Date.now()) {
+      return null
+    }
+    return payload
   } catch {
     return null
   }

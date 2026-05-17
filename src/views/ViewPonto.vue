@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { pontoApi, colaboradorApi } from '@/services/api'
+import { pontoApi, colaboradorApi, extractApiErrorMessage } from '@/services/api'
 import type { Ponto, Colaborador } from '@/types'
 import { formatDataHoraLocal, parseDataHora } from '@/utils/datetime'
 import { onlyDigits } from '@/utils/inputFormat'
@@ -440,8 +440,10 @@ async function exportarCsv() {
     setTimeout(() => window.URL.revokeObjectURL(url), 1000)
 
     showExportConfirm.value = false
-  } catch {
-    errorMsg.value = 'Erro ao exportar planilha'
+  } catch (err: unknown) {
+    const res = err as { response?: { data?: unknown } }
+    const msg = await extractApiErrorMessage(res.response?.data)
+    errorMsg.value = msg || 'Erro ao exportar planilha'
   } finally {
     exporting.value = false
   }
