@@ -24,7 +24,6 @@ const geoLng = ref<number | null>(null)
 /** Após uma captura válida, o botão "Capturar foto" fica bloqueado até reiniciar a página. */
 const captureLocked = ref(false)
 const flashActive = ref(false)
-const captureFeedback = ref(false)
 
 const tipos = [
   { value: 'entrada', label: 'Entrada', icon: 'login' },
@@ -111,10 +110,19 @@ async function capturePhoto() {
   window.setTimeout(() => {
     flashActive.value = false
   }, 480)
-  captureFeedback.value = true
   captureLocked.value = true
 
   await getGeolocation()
+}
+
+function fecharModalCaptura() {
+  if (matching.value || registering.value) return
+  identified.value = null
+  capturedFile.value = null
+  clearCapturedPreview()
+  captureLocked.value = false
+  errorMsg.value = ''
+  successMsg.value = ''
 }
 
 function restartKiosk() {
@@ -165,8 +173,6 @@ async function confirmarSim() {
     await pontoApi.create(auth.empresaId, form)
     successMsg.value = 'Ponto registrado com sucesso.'
     identified.value = null
-    capturedFile.value = null
-    clearCapturedPreview()
   } catch (err: any) {
     errorMsg.value = err.response?.data?.message ?? 'Erro ao registrar ponto.'
   } finally {
@@ -186,7 +192,7 @@ onBeforeUnmount(() => {
 
 <template>
   <AppLayout>
-    <div class="kiosk-page" :class="{ 'has-footer': captureLocked }">
+    <div class="kiosk-page">
       <header class="page-header">
         <h1>Bater Ponto (Kiosk)</h1>
         <p class="subtitle">Capture a foto, confirme o colaborador e registre o ponto.</p>
@@ -195,13 +201,6 @@ onBeforeUnmount(() => {
       <div class="camera-box" :class="{ flash: flashActive }">
         <video ref="videoRef" autoplay playsinline muted class="camera-video" />
       </div>
-
-      <Transition name="kiosk-pop">
-        <div v-if="captureFeedback" class="capture-toast" role="status">
-          <span class="material-symbols-rounded capture-toast-icon">check_circle</span>
-          <span>Foto capturada. Identifique o colaborador abaixo.</span>
-        </div>
-      </Transition>
 
       <div class="actions">
         <button
@@ -215,67 +214,122 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <div class="tipo-grid">
-        <label
-          v-for="tipo in tipos"
-          :key="tipo.value"
-          class="tipo-option"
-          :class="{ selected: selectedTipo === tipo.value }"
-        >
-          <input v-model="selectedTipo" type="radio" :value="tipo.value" class="sr-only" />
-          <span class="material-symbols-rounded tipo-icon">{{ tipo.icon }}</span>
-          <span class="tipo-label">{{ tipo.label }}</span>
-        </label>
-      </div>
-
-      <div v-if="capturedPreviewUrl" class="captured-box">
-        <img :src="capturedPreviewUrl" alt="Foto capturada" class="captured-img" />
-        <button type="button" class="btn-primary" :disabled="matching" @click="identificarColaborador">
-          <span v-if="matching" class="spinner" />
-          <span v-else>Identificar colaborador</span>
-        </button>
-      </div>
-
-      <div v-if="identified" class="confirm-card">
-        <img
-          v-if="identified.foto_url || identified.foto"
-          :src="identified.foto_url ?? identified.foto ?? ''"
-          alt="Foto do colaborador"
-          class="confirm-avatar"
-        />
-        <div class="confirm-text">
-          <strong>{{ identified.full_name }}</strong>
-          <span>Este e o colaborador?</span>
-        </div>
-        <div class="confirm-actions">
-          <button type="button" class="btn-outline" :disabled="registering" @click="confirmarNao">
-            Nao
-          </button>
-          <button type="button" class="btn-primary" :disabled="registering" @click="confirmarSim">
-            <span v-if="registering" class="spinner" />
-            <span v-else>Sim, bater ponto</span>
-          </button>
-        </div>
-      </div>
-
-      <div v-if="successMsg" class="alert success">{{ successMsg }}</div>
-      <div v-if="errorMsg" class="alert error">{{ errorMsg }}</div>
+      <div v-if="errorMsg && !capturedPreviewUrl" class="alert error">{{ errorMsg }}</div>
     </div>
 
     <Teleport to="body">
-      <div v-if="captureLocked" class="kiosk-restart-bar">
-        <button type="button" class="btn-restart" @click="restartKiosk">
-          <span class="material-symbols-rounded">refresh</span>
-          Nova foto — reiniciar tela
-        </button>
-      </div>
+      <Transition name="fade">
+        <div
+          v-if="capturedPreviewUrl"
+          class="modal-overlay"
+          @click.self="!matching && !registering && !identified && fecharModalCaptura()"
+        >
+          <div
+            class="modal kiosk-capture-modal"
+            role="dialog"
+            aria-modal="true"
+            :aria-labelledby="identified ? 'kiosk-confirm-title' : 'kiosk-capture-title'"
+          >
+            <div class="modal-header">
+              <h3 :id="identified ? 'kiosk-confirm-title' : 'kiosk-capture-title'">
+                {{ identified ? 'Confirmar colaborador' : 'Foto capturada' }}
+              </h3>
+              <button
+                type="button"
+                class="modal-close"
+                :disabled="matching || registering"
+                aria-label="Fechar"
+                @click="identified ? confirmarNao() : fecharModalCaptura()"
+              >
+                <span class="material-symbols-rounded">close</span>
+              </button>
+            </div>
+
+            <div class="modal-body">
+              <template v-if="identified">
+                <div class="confirm-profile">
+                  <img
+                    v-if="identified.foto_url || identified.foto"
+                    :src="identified.foto_url ?? identified.foto ?? ''"
+                    alt="Foto do colaborador"
+                    class="confirm-avatar"
+                  />
+                  <div v-else class="confirm-avatar confirm-avatar-placeholder">
+                    <span class="material-symbols-rounded">person</span>
+                  </div>
+                  <p class="confirm-name">{{ identified.full_name }}</p>
+                  <p class="confirm-question">Este e o colaborador?</p>
+                </div>
+                <div class="confirm-actions">
+                  <button type="button" class="btn-outline" :disabled="registering" @click="confirmarNao">
+                    Nao
+                  </button>
+                  <button type="button" class="btn-primary" :disabled="registering" @click="confirmarSim">
+                    <span v-if="registering" class="spinner" />
+                    <span v-else>Sim, bater ponto</span>
+                  </button>
+                </div>
+              </template>
+
+              <template v-else>
+                <img :src="capturedPreviewUrl" alt="Foto capturada" class="captured-img" />
+
+                <div class="tipo-grid">
+                  <label
+                    v-for="tipo in tipos"
+                    :key="tipo.value"
+                    class="tipo-option"
+                    :class="{ selected: selectedTipo === tipo.value }"
+                  >
+                    <input v-model="selectedTipo" type="radio" :value="tipo.value" class="sr-only" />
+                    <span class="material-symbols-rounded tipo-icon">{{ tipo.icon }}</span>
+                    <span class="tipo-label">{{ tipo.label }}</span>
+                  </label>
+                </div>
+
+                <button
+                  type="button"
+                  class="btn-primary btn-identify"
+                  :disabled="matching"
+                  @click="identificarColaborador"
+                >
+                  <span v-if="matching" class="spinner" />
+                  <span v-else>Identificar colaborador</span>
+                </button>
+
+                <button
+                  type="button"
+                  class="btn-outline btn-new-photo"
+                  :disabled="matching"
+                  @click="restartKiosk"
+                >
+                  <span class="material-symbols-rounded">refresh</span>
+                  Nova foto
+                </button>
+              </template>
+
+              <div v-if="successMsg" class="alert success">{{ successMsg }}</div>
+              <div v-if="errorMsg" class="alert error">{{ errorMsg }}</div>
+
+              <button
+                v-if="successMsg"
+                type="button"
+                class="btn-primary btn-identify"
+                @click="restartKiosk"
+              >
+                <span class="material-symbols-rounded">refresh</span>
+                Nova foto
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
     </Teleport>
   </AppLayout>
 </template>
 
 <style scoped>
 .kiosk-page { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
-.kiosk-page.has-footer { padding-bottom: 88px; }
 .page-header h1 { font-size: 1.5rem; font-weight: 800; }
 .subtitle { color: var(--color-text-secondary); font-size: 0.85rem; }
 .camera-box {
@@ -300,42 +354,89 @@ onBeforeUnmount(() => {
   100% { opacity: 0; }
 }
 .camera-video { width: 100%; min-height: 260px; max-height: 460px; object-fit: cover; }
-.capture-toast {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: var(--radius-md);
-  background: var(--color-tint-brand-bg, #ecfdf5);
-  border: 1px solid #a7f3d0;
-  color: #047857;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-.capture-toast-icon { font-size: 22px; flex-shrink: 0; }
-.kiosk-pop-enter-active,
-.kiosk-pop-leave-active { transition: opacity 0.25s ease, transform 0.25s ease; }
-.kiosk-pop-enter-from,
-.kiosk-pop-leave-to { opacity: 0; transform: translateY(-6px); }
 .actions { display: flex; justify-content: center; }
 .btn-capture .material-symbols-rounded { font-size: 20px; }
 .btn-capture:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
-.captured-box { display: flex; flex-direction: column; gap: 10px; }
-.captured-img { width: 100%; border-radius: var(--radius-md); border: 1px solid var(--color-border); }
-.confirm-card { border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.confirm-avatar { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 1px solid var(--color-border); }
-.confirm-text { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 200px; }
-.confirm-actions { display: flex; gap: 8px; margin-left: auto; }
+.captured-img {
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  max-height: 280px;
+  object-fit: cover;
+}
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 10000;
+  padding: 16px;
+}
+.modal {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  width: 100%;
+  max-width: 420px;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 0;
+}
+.modal-header h3 { font-size: 1.1rem; font-weight: 700; }
+.modal-close { color: var(--color-text-muted); padding: 4px; }
+.modal-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.confirm-profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.confirm-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--color-border);
+}
+.confirm-avatar-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-tint-brand-bg, #f3f4f6);
+  color: var(--color-text-secondary);
+}
+.confirm-avatar-placeholder .material-symbols-rounded { font-size: 48px; }
+.confirm-name { font-size: 1.15rem; font-weight: 800; }
+.confirm-question { font-size: 0.95rem; color: var(--color-text-secondary); }
+.confirm-actions { display: flex; gap: 10px; }
+.confirm-actions .btn-primary,
+.confirm-actions .btn-outline { flex: 1; padding: 14px 16px; font-size: 0.95rem; }
+.btn-identify,
+.btn-new-photo { width: 100%; padding: 14px 16px; font-size: 0.95rem; }
+@media (min-width: 769px) {
+  .modal-overlay { align-items: center; }
+  .modal { border-radius: var(--radius-xl); }
+}
+@media (max-width: 480px) {
+  .confirm-actions { flex-direction: column-reverse; }
+}
 .tipo-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .tipo-option { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 8px; border: 2px solid var(--color-border); border-radius: var(--radius-md); cursor: pointer; }
 .tipo-option.selected { border-color: var(--color-primary); background: var(--color-tint-brand-bg); }
 .tipo-icon { font-size: 22px; color: var(--color-text-secondary); }
 .tipo-option.selected .tipo-icon { color: var(--color-primary); }
 .tipo-label { font-size: 0.8rem; font-weight: 600; }
-.btn-primary,.btn-outline { padding: 10px 16px; border-radius: var(--radius-md); font-weight: 600; font-size: 0.85rem; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn-primary,.btn-outline { padding: 10px 16px; border-radius: var(--radius-md); font-weight: 600; font-size: 0.85rem; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: none; cursor: pointer; }
 .btn-primary { background: var(--color-primary); color: #fff; }
 .btn-outline { background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text); }
 .alert { padding: 10px 12px; border-radius: var(--radius-md); font-size: 0.85rem; font-weight: 500; }
@@ -344,41 +445,4 @@ onBeforeUnmount(() => {
 .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
 .sr-only { position: absolute; opacity: 0; pointer-events: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
-
-/* Barra fixa no rodapé da viewport (Teleport → body) */
-.kiosk-restart-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 9999;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0));
-  background: linear-gradient(to top, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.92));
-  border-top: 1px solid var(--color-border, #e5e7eb);
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.08);
-  display: flex;
-  justify-content: center;
-}
-.btn-restart {
-  width: 100%;
-  max-width: 520px;
-  padding: 14px 18px;
-  border-radius: var(--radius-md, 10px);
-  font-weight: 700;
-  font-size: 0.95rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px solid var(--color-border, #e5e7eb);
-  background: var(--color-surface, #fff);
-  color: var(--color-text, #111);
-  cursor: pointer;
-}
-.btn-restart .material-symbols-rounded {
-  font-size: 22px;
-}
-.btn-restart:active {
-  transform: scale(0.98);
-}
 </style>
