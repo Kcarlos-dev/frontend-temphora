@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { pontoApi, colaboradorApi, extractApiErrorMessage } from '@/services/api'
 import type { Ponto, Colaborador } from '@/types'
@@ -15,13 +15,22 @@ const registering = ref(false)
 const showModal = ref(false)
 const selectedTipo = ref('entrada')
 const fotoFile = ref<File | null>(null)
-const fileInputRef = ref<HTMLInputElement | null>(null)
 const geoLat = ref<number | null>(null)
 const geoLng = ref<number | null>(null)
 const geoLoading = ref(false)
 const geoHint = ref<string | null>(null)
 const successMsg = ref('')
 const errorMsg = ref('')
+
+// Captura de foto via getUserMedia. O `<input type="file" capture>` quebra
+// dentro da PWA standalone no iOS (a view é descartada quando volta da câmera
+// nativa), então fazemos a captura inline dentro do próprio modal.
+const videoRef = ref<HTMLVideoElement | null>(null)
+const cameraStream = ref<MediaStream | null>(null)
+const cameraStarting = ref(false)
+const cameraError = ref<string | null>(null)
+const capturedPreviewUrl = ref<string | null>(null)
+const flashActive = ref(false)
 
 // Paginação server-side simples (default pageSize=10). Default da API também é
 // 10, então sem informar esses parâmetros o backend devolve só os 10 primeiros.
@@ -166,16 +175,94 @@ function tipoIcon(tipo: string) {
   return tipos.find((t) => t.value === tipo)?.icon ?? 'schedule'
 }
 
-function handleFileChange(e: Event) {
-  const target = e.target as HTMLInputElement
-  fotoFile.value = target.files?.[0] ?? null
-  if (fotoFile.value) {
-    void obterLocalizacao()
-  } else {
-    geoLat.value = null
-    geoLng.value = null
-    geoHint.value = null
+function clearCapturedPreview() {
+  if (capturedPreviewUrl.value) {
+    URL.revokeObjectURL(capturedPreviewUrl.value)
   }
+  capturedPreviewUrl.value = null
+}
+
+async function startCamera() {
+  if (cameraStream.value) return
+  cameraError.value = null
+  cameraStarting.value = true
+  try {
+    // `environment` = câmera traseira (preferida no celular). Em desktop ou
+    // quando não há traseira, o browser cai pra qualquer câmera disponível.
+    cameraStream.value = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false,
+    })
+    if (videoRef.value) {
+      videoRef.value.srcObject = cameraStream.value
+      await videoRef.value.play().catch(() => {})
+    }
+  } catch {
+    cameraError.value =
+      'Não foi possível acessar a câmera. Verifique a permissão nas configurações do navegador.'
+  } finally {
+    cameraStarting.value = false
+  }
+}
+
+function stopCamera() {
+  cameraStream.value?.getTracks().forEach((t) => t.stop())
+  cameraStream.value = null
+  if (videoRef.value) {
+    videoRef.value.srcObject = null
+  }
+}
+
+async function capturarFoto() {
+  const video = videoRef.value
+  if (!video || !video.videoWidth || !video.videoHeight) {
+    cameraError.value = 'A câmera ainda não está pronta para captura.'
+    return
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    cameraError.value = 'Não foi possível processar a imagem da câmera.'
+    return
+  }
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, 'image/jpeg', 0.9),
+  )
+  if (!blob) {
+    cameraError.value = 'Falha ao capturar foto.'
+    return
+  }
+
+  clearCapturedPreview()
+  fotoFile.value = new File([blob], `ponto-${Date.now()}.jpg`, { type: 'image/jpeg' })
+  capturedPreviewUrl.value = URL.createObjectURL(blob)
+  cameraError.value = null
+
+  flashActive.value = true
+  window.setTimeout(() => {
+    flashActive.value = false
+  }, 360)
+
+  // Para de transmitir o vídeo enquanto o usuário revisa a foto — libera a
+  // câmera e o LED no celular.
+  stopCamera()
+
+  void obterLocalizacao()
+}
+
+async function descartarFoto() {
+  fotoFile.value = null
+  clearCapturedPreview()
+  geoLat.value = null
+  geoLng.value = null
+  geoHint.value = null
+  geoLoading.value = false
+  await startCamera()
 }
 
 async function registrarPonto() {
@@ -214,10 +301,10 @@ async function registrarPonto() {
     successMsg.value = 'Ponto registrado com sucesso!'
     showModal.value = false
     fotoFile.value = null
+    clearCapturedPreview()
     geoLat.value = null
     geoLng.value = null
     geoHint.value = null
-    if (fileInputRef.value) fileInputRef.value.value = ''
     // Volta pra primeira página pra exibir o registro recém-criado no topo.
     page.value = 1
     // Se um gestor está vendo um colaborador específico, refaz a busca desse colaborador;
@@ -465,18 +552,27 @@ async function exportarCsv() {
   }
 }
 
-watch(showModal, (open) => {
-  if (!open) {
+watch(showModal, async (open) => {
+  if (open) {
+    await startCamera()
+  } else {
+    stopCamera()
+    clearCapturedPreview()
     fotoFile.value = null
     geoLat.value = null
     geoLng.value = null
     geoHint.value = null
     geoLoading.value = false
-    if (fileInputRef.value) fileInputRef.value.value = ''
+    cameraError.value = null
   }
 })
 
 onMounted(fetchPontos)
+
+onBeforeUnmount(() => {
+  stopCamera()
+  clearCapturedPreview()
+})
 </script>
 
 <template>
@@ -799,21 +895,53 @@ onMounted(fetchPontos)
                 </div>
 
                 <div class="field">
-                  <label class="field-label" for="ponto-foto-input">Foto</label>
-                  <label class="file-upload" for="ponto-foto-input">
-                    <span class="material-symbols-rounded">photo_camera</span>
-                    <span>{{ fotoFile?.name ?? 'Tirar foto ou escolher arquivo' }}</span>
-                    <input
-                      id="ponto-foto-input"
-                      ref="fileInputRef"
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      class="sr-only"
-                      @change="handleFileChange"
-                      required
+                  <label class="field-label">Foto</label>
+
+                  <div class="camera-area" :class="{ flash: flashActive }">
+                    <video
+                      v-show="!capturedPreviewUrl"
+                      ref="videoRef"
+                      autoplay
+                      playsinline
+                      muted
+                      class="camera-video"
                     />
-                  </label>
+                    <img
+                      v-if="capturedPreviewUrl"
+                      :src="capturedPreviewUrl"
+                      alt="Foto capturada"
+                      class="camera-preview"
+                    />
+                    <div v-if="cameraStarting && !capturedPreviewUrl" class="camera-overlay">
+                      <span class="spinner" />
+                      <span>Iniciando câmera…</span>
+                    </div>
+                  </div>
+
+                  <p v-if="cameraError" class="camera-error">{{ cameraError }}</p>
+
+                  <div class="camera-actions">
+                    <button
+                      v-if="!capturedPreviewUrl"
+                      type="button"
+                      class="btn-primary btn-full"
+                      :disabled="cameraStarting || !cameraStream"
+                      @click="capturarFoto"
+                    >
+                      <span class="material-symbols-rounded">photo_camera</span>
+                      <span>Capturar foto</span>
+                    </button>
+                    <button
+                      v-else
+                      type="button"
+                      class="btn-outline btn-full"
+                      @click="descartarFoto"
+                    >
+                      <span class="material-symbols-rounded">refresh</span>
+                      <span>Tirar outra</span>
+                    </button>
+                  </div>
+
                   <div v-if="fotoFile" class="geo-box">
                     <template v-if="geoLoading">
                       <span class="spinner geo-spinner" />
@@ -838,7 +966,11 @@ onMounted(fetchPontos)
                   </div>
                 </div>
 
-                <button type="submit" class="btn-primary btn-full" :disabled="registering">
+                <button
+                  type="submit"
+                  class="btn-primary btn-full"
+                  :disabled="registering || !fotoFile"
+                >
                   <span v-if="registering" class="spinner" />
                   <span v-else>Confirmar Registro</span>
                 </button>
@@ -1425,27 +1557,62 @@ onMounted(fetchPontos)
   margin-bottom: 6px;
 }
 
-.file-upload {
+.camera-area {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #000;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px;
-  border: 2px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+}
+
+.camera-area.flash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.85);
+  animation: cameraFlash 0.36s ease-out;
+  pointer-events: none;
+}
+
+@keyframes cameraFlash {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.camera-video,
+.camera-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.camera-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #fff;
   font-size: 0.85rem;
-  font-weight: 400;
-  margin-bottom: 0;
-  color: var(--color-text-secondary);
-  transition: border-color 0.15s;
+  background: rgba(0, 0, 0, 0.35);
 }
 
-.file-upload:hover {
-  border-color: var(--color-text-muted);
+.camera-error {
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  color: var(--color-danger, #c0392b);
 }
 
-.file-upload .material-symbols-rounded {
-  font-size: 22px;
+.camera-actions {
+  margin-top: 10px;
 }
 
 .geo-box {
