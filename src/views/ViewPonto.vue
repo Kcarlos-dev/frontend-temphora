@@ -187,10 +187,10 @@ async function startCamera() {
   cameraError.value = null
   cameraStarting.value = true
   try {
-    // `environment` = câmera traseira (preferida no celular). Em desktop ou
-    // quando não há traseira, o browser cai pra qualquer câmera disponível.
+    // `user` = câmera frontal (selfie). Mesma escolha do Kiosk, pra registrar
+    // o rosto do colaborador junto com o ponto.
     cameraStream.value = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } },
+      video: { facingMode: { ideal: 'user' } },
       audio: false,
     })
     if (videoRef.value) {
