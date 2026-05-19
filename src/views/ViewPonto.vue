@@ -1592,6 +1592,13 @@ onBeforeUnmount(() => {
   display: block;
 }
 
+/* Câmera frontal: alguns browsers (e o iOS Safari) espelham o preview por
+ * padrão. Invertemos de volta com scaleX(-1) só no <video> para o preview
+ * bater com a foto final (que sai do canvas sem espelhamento). */
+.camera-video {
+  transform: scaleX(-1);
+}
+
 .camera-overlay {
   position: absolute;
   inset: 0;
