@@ -6,6 +6,7 @@ import { colaboradorApi } from '@/services/api'
 import type { Colaborador } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { maskCpf, maskPhoneBr, onlyDigits } from '@/utils/inputFormat'
+import { compressImageFileIfNeeded } from '@/utils/compressImage'
 
 const auth = useAuthStore()
 const recent = useRecentUsersStore()
@@ -18,6 +19,15 @@ const editing = ref<Colaborador | null>(null)
 const saving = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
+
+// Estado do upload de foto no modal: em "Editar" o upload acontece na hora
+// (já temos id_colaborador); em "Novo" guardamos o arquivo e enviamos depois
+// do POST de criação retornar o id do colaborador recém-criado.
+const fotoFile = ref<File | null>(null)
+const fotoPreview = ref<string | null>(null)
+const fotoUrlAtual = ref<string | null>(null)
+const fotoUploading = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
 
 // Paginação server-side simples (default pageSize=10). A busca/filtro por status
 // acontecem em cima da página carregada — por isso mantemos um pageSize baixo
@@ -96,6 +106,15 @@ const statusCounts = computed(() => {
   return counts
 })
 
+function resetFotoState() {
+  fotoFile.value = null
+  if (fotoPreview.value) {
+    URL.revokeObjectURL(fotoPreview.value)
+  }
+  fotoPreview.value = null
+  fotoUrlAtual.value = null
+}
+
 function openNew() {
   editing.value = null
   form.value = {
@@ -108,6 +127,7 @@ function openNew() {
     id_user: '',
     status: 'ativo',
   }
+  resetFotoState()
   showModal.value = true
 }
 
@@ -122,7 +142,75 @@ function openEdit(colab: Colaborador) {
     id_user: String(colab.id_user),
     status: colab.status,
   }
+  resetFotoState()
+  fotoUrlAtual.value = colab.foto_url ?? null
   showModal.value = true
+}
+
+function closeModal() {
+  if (saving.value || fotoUploading.value) return
+  showModal.value = false
+  resetFotoState()
+}
+
+function triggerFotoPicker() {
+  fileInput.value?.click()
+}
+
+/**
+ * Em "Editar" envia a foto imediatamente (já temos id_colaborador).
+ * Em "Novo" apenas guarda em memória + gera preview — o upload acontece
+ * depois que `handleSave` cria o colaborador.
+ */
+async function handleFotoChange(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  let compressed: File
+  try {
+    compressed = await compressImageFileIfNeeded(file)
+  } catch {
+    compressed = file
+  }
+
+  if (fotoPreview.value) {
+    URL.revokeObjectURL(fotoPreview.value)
+  }
+  fotoPreview.value = URL.createObjectURL(compressed)
+  fotoFile.value = compressed
+
+  if (editing.value) {
+    const idEmpresa = editing.value.id_empresa
+    const idColab = editing.value.id
+    fotoUploading.value = true
+    errorMsg.value = ''
+    try {
+      const fd = new FormData()
+      fd.append('foto', compressed)
+      const res = await colaboradorApi.uploadFoto(idEmpresa, idColab, fd)
+      fotoUrlAtual.value = res.data.foto_url ?? fotoUrlAtual.value
+      successMsg.value = 'Foto atualizada!'
+      const idx = colaboradores.value.findIndex((c) => c.id === idColab)
+      if (idx >= 0) {
+        colaboradores.value[idx] = { ...colaboradores.value[idx], ...res.data }
+      }
+    } catch (err: any) {
+      errorMsg.value = err.response?.data?.message ?? 'Erro ao enviar a foto.'
+      fotoFile.value = null
+    } finally {
+      fotoUploading.value = false
+    }
+  }
+}
+
+function removerFotoSelecionada() {
+  fotoFile.value = null
+  if (fotoPreview.value) {
+    URL.revokeObjectURL(fotoPreview.value)
+    fotoPreview.value = null
+  }
 }
 
 async function handleSave() {
@@ -156,10 +244,24 @@ async function handleSave() {
       await colaboradorApi.update(idEmpresaAlvo, editing.value.id, payload)
       successMsg.value = 'Colaborador atualizado!'
     } else {
-      await colaboradorApi.create(idEmpresaAlvo, payload)
-      successMsg.value = 'Colaborador criado!'
+      const res = await colaboradorApi.create(idEmpresaAlvo, payload)
+      // Em "Novo": se o admin/RH escolheu uma foto antes de salvar,
+      // sobe a foto agora que já temos o id_colaborador.
+      if (fotoFile.value && res.data?.id) {
+        try {
+          const fd = new FormData()
+          fd.append('foto', fotoFile.value)
+          await colaboradorApi.uploadFoto(idEmpresaAlvo, res.data.id, fd)
+          successMsg.value = 'Colaborador criado com foto!'
+        } catch {
+          successMsg.value = 'Colaborador criado, mas houve erro ao enviar a foto.'
+        }
+      } else {
+        successMsg.value = 'Colaborador criado!'
+      }
     }
     showModal.value = false
+    resetFotoState()
     await fetchColaboradores()
   } catch (err: any) {
     errorMsg.value = err.response?.data?.message ?? 'Erro ao salvar'
@@ -275,8 +377,13 @@ onMounted(async () => {
           <div v-for="colab in filtered" :key="colab.id" class="colab-card">
 
             <div class="colab-main">
-              <div class="colab-avatar">
-                {{ colab.full_name.charAt(0).toUpperCase() }}
+              <div class="colab-avatar" :class="{ 'has-photo': !!colab.foto_url }">
+                <img
+                  v-if="colab.foto_url"
+                  :src="colab.foto_url"
+                  :alt="colab.full_name"
+                />
+                <span v-else>{{ colab.full_name.charAt(0).toUpperCase() }}</span>
               </div>
               <div class="colab-info">
                 <span class="colab-name">{{ colab.full_name }}</span>
@@ -341,12 +448,67 @@ onMounted(async () => {
             <div class="modal">
               <div class="modal-header">
                 <h3>{{ editing ? 'Editar' : 'Novo' }} Colaborador</h3>
-                <button class="modal-close" @click="showModal = false">
+                <button class="modal-close" @click="closeModal">
                   <span class="material-symbols-rounded">close</span>
                 </button>
               </div>
 
               <form @submit.prevent="handleSave" class="modal-body">
+                <div class="foto-section">
+                  <div
+                    class="foto-avatar"
+                    :class="{ 'has-photo': !!(fotoPreview || fotoUrlAtual) }"
+                  >
+                    <img
+                      v-if="fotoPreview || fotoUrlAtual"
+                      :src="fotoPreview ?? fotoUrlAtual ?? ''"
+                      alt="Foto do colaborador"
+                    />
+                    <span v-else class="foto-avatar-fallback">
+                      <span class="material-symbols-rounded">person</span>
+                    </span>
+                    <div v-if="fotoUploading" class="foto-avatar-overlay">
+                      <span class="spinner" />
+                    </div>
+                    <button
+                      type="button"
+                      class="foto-avatar-edit"
+                      :disabled="fotoUploading"
+                      :title="editing ? 'Trocar foto' : 'Selecionar foto'"
+                      @click="triggerFotoPicker"
+                    >
+                      <span class="material-symbols-rounded">photo_camera</span>
+                    </button>
+                  </div>
+                  <input
+                    ref="fileInput"
+                    type="file"
+                    accept="image/*"
+                    capture="user"
+                    hidden
+                    @change="handleFotoChange"
+                  />
+                  <div class="foto-info">
+                    <span class="foto-title">Foto do colaborador</span>
+                    <span class="foto-hint">
+                      {{
+                        editing
+                          ? 'Toque na câmera para trocar — o envio é imediato.'
+                          : 'Opcional. Será enviada após salvar o cadastro.'
+                      }}
+                    </span>
+                    <button
+                      v-if="!editing && fotoFile"
+                      type="button"
+                      class="foto-clear"
+                      @click="removerFotoSelecionada"
+                    >
+                      <span class="material-symbols-rounded">close</span>
+                      Remover seleção
+                    </button>
+                  </div>
+                </div>
+
                 <div v-if="empresaReadonly" class="field field-readonly">
                   <label>Empresa</label>
                   <div class="readonly-box">
@@ -648,6 +810,18 @@ onMounted(async () => {
   font-weight: 700;
   font-size: 0.95rem;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.colab-avatar.has-photo {
+  background: var(--color-border-light);
+}
+
+.colab-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .colab-info {
@@ -782,6 +956,136 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.foto-section {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+}
+
+.foto-avatar {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--color-border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.foto-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.foto-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+}
+
+.foto-avatar-fallback .material-symbols-rounded {
+  font-size: 36px;
+}
+
+.foto-avatar-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.foto-avatar-overlay .spinner {
+  width: 22px;
+  height: 22px;
+  border-width: 3px;
+}
+
+.foto-avatar-edit {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  border: 2px solid var(--color-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.foto-avatar-edit:hover:not(:disabled) {
+  transform: scale(1.05);
+}
+
+.foto-avatar-edit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.foto-avatar-edit .material-symbols-rounded {
+  font-size: 16px;
+}
+
+.foto-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.foto-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.foto-hint {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.foto-clear {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.foto-clear:hover {
+  background: var(--color-bg);
+}
+
+.foto-clear .material-symbols-rounded {
+  font-size: 14px;
 }
 
 .field label {
