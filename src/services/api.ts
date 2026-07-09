@@ -13,7 +13,11 @@ import type {
 
 const api = axios.create({
   baseURL: '/api',
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache',
+    Pragma: 'no-cache',
+  },
 })
 
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
@@ -55,7 +59,7 @@ export async function extractApiErrorMessage(data: unknown): Promise<string> {
  * Rotas que retornam 401 como erro de negócio (ex.: planilha sem registros no período).
  * Para essas, o componente trata o erro e mostra uma notificação — não desloga o usuário.
  */
-const SKIP_LOGOUT_ON_401 = [/\/ponto\/planilha\//]
+const SKIP_LOGOUT_ON_401 = [/\/ponto\/planilha\//, /\/auth\/login/]
 
 api.interceptors.response.use(
   (res) => res,

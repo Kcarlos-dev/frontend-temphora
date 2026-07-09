@@ -89,7 +89,14 @@ export const useAuthStore = defineStore('auth', () => {
         empresa.value = null
       }
     } catch (err: any) {
-      error.value = err.response?.data?.message ?? 'Erro ao fazer login'
+      if (err.response?.data?.message) {
+        error.value = err.response.data.message
+      } else if (err.request && !err.response) {
+        error.value =
+          'Falha de conexão. Verifique a internet e tente novamente.'
+      } else {
+        error.value = 'Erro ao fazer login'
+      }
       throw err
     } finally {
       loading.value = false

@@ -62,17 +62,12 @@ export default defineConfig({
         clientsClaim: true,
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
-        // `/api/` não entra em runtime cache: evita JSON antigo e respostas 200
-        // (ex.: HTML de challenge) ficarem no Cache Storage — relevante atrás de CDN/WAF.
+        // Navegações sempre pela rede: NetworkFirst com timeout servia HTML antigo
+        // em rede lenta (PWA/iOS), quebrando login e lazy chunks após deploy.
         runtimeCaching: [
           {
             urlPattern: ({ request }) => request.mode === 'navigate',
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'html-cache',
-              networkTimeoutSeconds: 3,
-              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 },
-            },
+            handler: 'NetworkOnly',
           },
         ],
       },
